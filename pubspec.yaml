@@ -1,0 +1,35 @@
+name: qlpt_frontend
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # === THƯ VIỆN ĐÃ ĐƯỢC KIỂM TRA TƯƠNG THÍCH ===
+  http: ^1.2.0
+  shared_preferences: ^2.2.3
+  intl: ^0.20.3
+  image_picker: ^1.0.7
+
+  # Hãy sử dụng các phiên bản mới nhất và ổn định của Firebase
+  firebase_core: ^3.6.0  # Cập nhật lên bản mới hơn (Tham khảo từ nguồn)
+  firebase_messaging: ^15.1.3 # Cập nhật tương ứng với firebase_core
+
+  # Thư viện hiển thị thông báo local khi app đang mở
+  flutter_local_notifications: ^17.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

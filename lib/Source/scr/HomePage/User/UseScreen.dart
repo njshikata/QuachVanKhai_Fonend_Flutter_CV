@@ -1,0 +1,578 @@
+// Đường dẫn: lib/Source/scr/HomePage/User/UserScreen.dart
+
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:qlpt_frontend/Source/api/User/Total/UserAPI.dart';
+import 'package:qlpt_frontend/Source/api/User/Total/UserDTO.dart';
+// ĐÃ THÊM IMPORT PAY API
+import 'package:qlpt_frontend/Source/api/User/Pay/PayAPI.dart';
+import 'package:qlpt_frontend/Source/api/User/Pay/PayDTO.dart';
+
+import 'package:qlpt_frontend/Source/scr/HomePage/User/UseInforScreen.dart';
+import 'package:qlpt_frontend/Source/scr/Login/LoginScreen.dart';
+import 'package:qlpt_frontend/Source/security/Security.dart';
+
+class UserScreen extends StatefulWidget {
+  const UserScreen({super.key});
+
+  @override
+  State<UserScreen> createState() => _UserScreenState();
+}
+
+class _UserScreenState extends State<UserScreen> {
+  int _currentIndex = 0; // Quản lý Tab dưới cùng
+  final formatCurrency = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
+
+  MyRoomResponse? _myRoom;
+  bool _isLoading = true;
+  String _errorMessage = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMyRoom();
+  }
+
+  void _showSnackBar(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: color, behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  // Gọi API lấy thông tin phòng đang thuê
+  Future<void> _fetchMyRoom() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = "";
+    });
+    try {
+      var room = await UserAPI.getMyRoomInfo();
+      setState(() {
+        _myRoom = room;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString().replaceAll("Exception: ", "");
+        _isLoading = false;
+      });
+    }
+  }
+
+  // ================= HÀM XEM ẢNH CÔNG TƠ =================
+  void _showMeterImageDialog(String imageUrl) {
+    String fixedUrl = imageUrl;
+    if (!kIsWeb) {
+      if (Platform.isAndroid) {
+        fixedUrl = imageUrl.replaceAll("localhost", "10.0.2.2");
+      }
+    }
+
+    showDialog(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                      color: Colors.green,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(16))
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Ảnh minh chứng", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      InkWell(
+                        onTap: () => Navigator.pop(context),
+                        child: const Icon(Icons.close, color: Colors.white),
+                      )
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: InteractiveViewer(
+                    panEnabled: true,
+                    boundaryMargin: const EdgeInsets.all(20),
+                    minScale: 0.5,
+                    maxScale: 4,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        fixedUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return const SizedBox(
+                            height: 300,
+                            child: Center(child: CircularProgressIndicator(color: Colors.green)),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return SizedBox(
+                            height: 200,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                                SizedBox(height: 10),
+                                Text("Không thể tải ảnh", style: TextStyle(color: Colors.grey)),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Đóng", style: TextStyle(color: Colors.green, fontSize: 16)),
+                ),
+                const SizedBox(height: 8)
+              ],
+            ),
+          );
+        }
+    );
+  }
+
+  // ================= HÀM XỬ LÝ THANH TOÁN =================
+  void _showPaymentDialog(int invoiceId) async {
+    // Hiện loading xoay xoay mờ màn hình
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.green)),
+    );
+
+    try {
+      // Gọi API lấy dữ liệu QR
+      VietQRResponse qrData = await PayAPI.getVietQR(invoiceId);
+
+      // Tắt loading
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      // Fix URL ảnh cho máy ảo Android
+      String qrImageUrl = qrData.qrUrl;
+      if (!kIsWeb && Platform.isAndroid) {
+        qrImageUrl = qrImageUrl.replaceAll("localhost", "10.0.2.2");
+      }
+
+      // Hiện Popup QR Code
+      if (!mounted) return;
+      showDialog(
+          context: context,
+          builder: (context) {
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                          color: Colors.orange.shade500,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20))
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Thanh toán hóa đơn", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                          InkWell(
+                            onTap: () => Navigator.pop(context),
+                            child: const Icon(Icons.close, color: Colors.white),
+                          )
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    const Text("Quét mã QR bằng ứng dụng ngân hàng", style: TextStyle(fontSize: 14, color: Colors.grey)),
+                    const SizedBox(height: 16),
+
+                    // Hiển thị ảnh QR Code
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        qrImageUrl,
+                        height: 250,
+                        width: 250,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return const SizedBox(
+                            height: 250, width: 250,
+                            child: Center(child: CircularProgressIndicator(color: Colors.orange)),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) => const SizedBox(
+                          height: 250, width: 250,
+                          child: Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+                    const Divider(),
+
+                    // Hiển thị thông tin text (phòng trường hợp lỗi ảnh)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      child: Column(
+                        children: [
+                          _buildPaymentDetailRow("Ngân hàng:", qrData.bankId ?? "---"),
+                          _buildPaymentDetailRow("Số tài khoản:", qrData.accountNo ?? "---"),
+                          _buildPaymentDetailRow("Chủ thẻ:", qrData.accountName ?? "---"),
+                          _buildPaymentDetailRow("Số tiền:", formatCurrency.format(qrData.amount), color: Colors.red),
+                          _buildPaymentDetailRow("Nội dung:", qrData.transferContent ?? "---", color: Colors.blue),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text("Lưu ý: Chuyển đúng nội dung để hệ thống tự động xác nhận",
+                        style: TextStyle(color: Colors.red, fontSize: 12, fontStyle: FontStyle.italic), textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            );
+          }
+      );
+    } catch (e) {
+      // Tắt loading nếu lỗi
+      if (!mounted) return;
+      Navigator.pop(context);
+      _showSnackBar(e.toString().replaceAll("Exception: ", ""), Colors.red);
+    }
+  }
+
+  Widget _buildPaymentDetailRow(String label, String value, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(value, textAlign: TextAlign.right,
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: color ?? Colors.black87)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= UI BOTTOM SHEET: LỊCH SỬ HÓA ĐƠN =================
+  void _showInvoiceHistory() {
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.9,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: FutureBuilder<List<MyInvoiceResponse>>(
+                future: UserAPI.getMyInvoices(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: Colors.green));
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text("Lỗi: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
+                  }
+
+                  List<MyInvoiceResponse> invoices = snapshot.data ?? [];
+
+                  return Column(
+                    children: [
+                      const SizedBox(height: 16),
+                      Container(width: 50, height: 5, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10))),
+                      const SizedBox(height: 16),
+                      const Text("Hóa Đơn Của Tôi", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)),
+                      const Divider(height: 30),
+
+                      if (invoices.isEmpty)
+                        const Expanded(child: Center(child: Text("Bạn chưa có hóa đơn nào!"))),
+
+                      if (invoices.isNotEmpty)
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: invoices.length,
+                            itemBuilder: (ctx, index) {
+                              var inv = invoices[index];
+                              bool isPaid = inv.status == 'PAID';
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    side: BorderSide(color: isPaid ? Colors.green.shade300 : Colors.red.shade300, width: 1.5)
+                                ),
+                                child: ExpansionTile(
+                                  backgroundColor: isPaid ? Colors.green.shade50 : Colors.red.shade50,
+                                  collapsedBackgroundColor: isPaid ? Colors.green.shade50 : Colors.red.shade50,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  leading: CircleAvatar(
+                                    backgroundColor: isPaid ? Colors.green : Colors.red,
+                                    child: Icon(isPaid ? Icons.check : Icons.warning_amber, color: Colors.white),
+                                  ),
+                                  title: Text("Kỳ ${inv.billingCycle}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                                  subtitle: Text(
+                                    "Hạn nộp: ${inv.dueDate ?? '---'}\nTổng tiền: ${formatCurrency.format(inv.totalAmount)}",
+                                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.bold),
+                                  ),
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(color: Colors.white, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)), border: Border(top: BorderSide(color: Colors.grey.shade300))),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text("CHỈ SỐ TIÊU THỤ", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text("⚡ Điện:"),
+                                              Text("Cũ: ${inv.oldElectricity} - Mới: ${inv.newElectricity} = ${inv.electricUsage} kWh", style: const TextStyle(fontWeight: FontWeight.bold)),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text("Thành tiền:"),
+                                              Text(formatCurrency.format(inv.electricTotal), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                                            ],
+                                          ),
+                                          const Divider(),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text("💧 Nước:"),
+                                              Text("Cũ: ${inv.oldWater} - Mới: ${inv.newWater} = ${inv.waterUsage} Khối", style: const TextStyle(fontWeight: FontWeight.bold)),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text("Thành tiền:"),
+                                              Text(formatCurrency.format(inv.waterTotal), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                                            ],
+                                          ),
+                                          const Divider(),
+                                          const Text("DỊCH VỤ KHÁC", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                                          const SizedBox(height: 8),
+                                          if (inv.extraServices.isEmpty) const Text("Không có dịch vụ thêm."),
+                                          ...inv.extraServices.map((srv) => Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text("🔹 ${srv.serviceName}:"),
+                                              Text(formatCurrency.format(srv.appliedPrice), style: const TextStyle(fontWeight: FontWeight.bold)),
+                                            ],
+                                          )).toList(),
+
+                                          const SizedBox(height: 16),
+                                          const Divider(),
+
+                                          // HÀNG NÚT BẤM DƯỚI CÙNG
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                            children: [
+                                              // Nút xem ảnh
+                                              if (inv.meterImageUrl != null && inv.meterImageUrl!.isNotEmpty)
+                                                OutlinedButton.icon(
+                                                  onPressed: () {
+                                                    _showMeterImageDialog(inv.meterImageUrl!);
+                                                  },
+                                                  icon: const Icon(Icons.image, color: Colors.blue, size: 18),
+                                                  label: const Text("Ảnh công tơ", style: TextStyle(color: Colors.blue)),
+                                                  style: OutlinedButton.styleFrom(
+                                                      side: const BorderSide(color: Colors.blue),
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                                                  ),
+                                                ),
+
+                                              // NÚT THANH TOÁN (Chỉ hiện khi chưa thanh toán)
+                                              if (!isPaid)
+                                                ElevatedButton.icon(
+                                                  onPressed: () {
+                                                    // Đóng bottom sheet danh sách hóa đơn trước
+                                                    Navigator.pop(context);
+                                                    // Gọi hàm mở dialog thanh toán (Cần truyền ID thật, ở đây giả sử API trả về ID)
+                                                    _showPaymentDialog(inv.invoiceId!);
+                                                  },
+                                                  icon: const Icon(Icons.qr_code_2, color: Colors.white, size: 18),
+                                                  label: const Text("Thanh toán", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                                  style: ElevatedButton.styleFrom(
+                                                      backgroundColor: Colors.orange.shade500,
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                                                  ),
+                                                )
+                                            ],
+                                          )
+                                        ],
+                                      ),
+                                    )
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  );
+                }
+            ),
+          );
+        }
+    );
+  }
+
+  // ================= GIAO DIỆN CHÍNH (TAB 1) =================
+  Widget _buildHomeTab() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator(color: Colors.green));
+    }
+
+    if (_errorMessage.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 80, color: Colors.red.shade300),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                  _errorMessage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, color: Colors.red)
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_myRoom == null) {
+      return const Center(child: Text("Không có dữ liệu phòng."));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text("Phòng bạn đang thuê:", style: TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+
+          // Thẻ thông tin phòng
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.green.shade600, Colors.green.shade400]),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [BoxShadow(color: Colors.green.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("P.${_myRoom!.roomNumber}", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                    const Icon(Icons.meeting_room, size: 40, color: Colors.white70),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(_myRoom!.propertyName, style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 4),
+                Text(_myRoom!.propertyAddress ?? "Chưa cập nhật địa chỉ", style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                const Divider(color: Colors.white54, height: 30),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("Giá phòng gốc:", style: TextStyle(color: Colors.white, fontSize: 14)),
+                    Text(formatCurrency.format(_myRoom!.basePrice), style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  ],
+                )
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 30),
+
+          // Nút xem Lịch sử Hóa đơn
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Colors.orange.shade500,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 4,
+            ),
+            onPressed: _showInvoiceHistory,
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.receipt_long, color: Colors.white, size: 28),
+                SizedBox(width: 12),
+                Text("XEM HÓA ĐƠN & THANH TOÁN", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= GIAO DIỆN CÁ NHÂN (TAB 2) =================
+  Widget _buildProfileTab() {
+    return const UseInforScreen();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: Text(_currentIndex == 0 ? "Quản Lý Tiền Trọ" : "Cá Nhân", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        backgroundColor: Colors.green,
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: _currentIndex == 0 ? _buildHomeTab() : _buildProfileTab(),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        selectedItemColor: Colors.green,
+        onTap: (index) => setState(() => _currentIndex = index),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Phòng của tôi"),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: "Cá nhân"),
+        ],
+      ),
+    );
+  }
+}
