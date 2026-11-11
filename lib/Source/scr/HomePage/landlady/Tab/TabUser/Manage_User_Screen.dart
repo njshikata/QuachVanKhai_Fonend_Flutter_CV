@@ -8,6 +8,9 @@ import 'package:qlpt_frontend/Source/api/Register/Register_API.dart';
 import 'package:qlpt_frontend/Source/api/Register/Register_DTO.dart';
 import 'package:qlpt_frontend/Source/api/ServiceRoom/ServiceRoomAPI.dart';
 import 'package:qlpt_frontend/Source/api/ServiceRoom/ServiceRoomDTO.dart';
+import 'package:qlpt_frontend/Source/security/Security.dart';
+// TODO: Kiểm tra lại đường dẫn import file LoginScreen bên dưới xem đúng với project của bạn chưa
+import 'package:qlpt_frontend/Source/scr/Login/LoginScreen.dart';
 
 class ManageUserScreen extends StatefulWidget {
   const ManageUserScreen({super.key});
@@ -384,7 +387,6 @@ class _ManageUserScreenState extends State<ManageUserScreen> {
 
                     const SizedBox(height: 20),
 
-                    // === 2 NÚT HÀNH ĐỘNG MỚI (SỬA LẠI NÚT LỊCH SỬ) ===
                     Row(
                       children: [
                         Expanded(
@@ -404,7 +406,7 @@ class _ManageUserScreenState extends State<ManageUserScreen> {
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                             onPressed: () {
                               Navigator.pop(context);
-                              _showUserHistory(user); // GỌI HÀM LỊCH SỬ THAY VÌ XÓA
+                              _showUserHistory(user);
                             },
                             icon: const Icon(Icons.history),
                             label: const Text("Xem Lịch Sử", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -646,10 +648,62 @@ class _ManageUserScreenState extends State<ManageUserScreen> {
     );
   }
 
+  // ================= XỬ LÝ ĐĂNG XUẤT =================
+  void _handleLogout() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text("Xác nhận đăng xuất", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        content: const Text("Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng không?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Hủy", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () async {
+              Navigator.pop(ctx); // Đóng hộp thoại
+
+              // 1. Xóa token
+              await Security.logout();
+
+              if (!mounted) return;
+
+              // 2. Chuyển hướng & Xóa lịch sử điều hướng
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    (route) => false,
+              );
+            },
+            child: const Text("Đăng xuất", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
+      // ================= THÊM APPBAR =================
+      appBar: AppBar(
+        title: const Text("Quản lý Khách thuê", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 1,
+        actions: [
+          IconButton(
+            tooltip: "Đăng xuất",
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            onPressed: _handleLogout,
+          ),
+        ],
+      ),
+      // ===============================================
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.blueAccent,
         icon: const Icon(Icons.person_add, color: Colors.white),

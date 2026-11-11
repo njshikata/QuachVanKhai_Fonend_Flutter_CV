@@ -73,20 +73,72 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
   }
 
   // =========================================================================
-  // POPUP 1: THÊM NGƯỜI VÀO PHÒNG TRỐNG
+  // POPUP 1: THÊM NGƯỜI VÀO PHÒNG TRỐNG (ĐÃ FIX LỖI LOAD USER & NULL SAFETY)
   // =========================================================================
   void _showAddTenantDialog(BuildContext context, LandlordRoomDTO room) async {
+    // 1. Hiển thị vòng xoay Loading để UI không bị đơ khi gọi API
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
+    );
+
     List<ManageUserDTO> allUsers = [];
+
     try {
-      allUsers = await ManageUserAPI.getAllUsers();
+      // 2. Gọi đồng thời cả 2 API để tiết kiệm thời gian
+      final results = await Future.wait([
+        ManageUserAPI.getAllUsers(),
+        PropertyAPI.getDashboardData(),
+      ]);
+
+      allUsers = results[0] as List<ManageUserDTO>;
+      List<LandlordPropertyDTO> freshProperties = results[1] as List<LandlordPropertyDTO>;
+
+      // 3. Quét danh sách khách ĐANG THUÊ
+      Set<String> rentedPhones = {};
+      for (var property in freshProperties) {
+        for (var r in property.rooms) {
+          if (r.status == 'RENTED' && r.currentTenant != null) {
+            // Đã fix lỗi unconditionally invoked: Thêm dấu ? và fallback chuỗi rỗng
+            String phone = r.currentTenant!.phoneNumber?.trim() ?? "";
+            if (phone.isNotEmpty) rentedPhones.add(phone);
+          }
+        }
+      }
+
+      // 4. Lọc danh sách khách CHƯA CÓ TRỌ & XỬ LÝ TRÙNG LẶP
+      Set<String> seenEmails = {}; // Dùng để chặn trùng Email gây crash Dropdown
+
+      allUsers = allUsers.where((user) {
+        // Đã fix lỗi unconditionally invoked: Thêm dấu ? và fallback chuỗi rỗng
+        String userPhone = user.phoneNumber?.trim() ?? "";
+        String userEmail = user.email?.trim() ?? "";
+
+        // Bỏ qua user nếu không có email hoặc email bị trùng
+        if (userEmail.isEmpty || seenEmails.contains(userEmail)) return false;
+
+        // Bỏ qua user nếu số điện thoại này đang có trong danh sách đang thuê
+        if (userPhone.isNotEmpty && rentedPhones.contains(userPhone)) return false;
+
+        seenEmails.add(userEmail); // Đánh dấu email này đã được đưa vào danh sách
+        return true;
+      }).toList();
+
     } catch (e) {
-      _showSnackBar("Lỗi tải danh sách người thuê: $e", Colors.red);
+      if (mounted) Navigator.pop(context); // Tắt Loading
+      _showSnackBar("Lỗi tải danh sách: $e", Colors.red);
       return;
     }
 
     if (!context.mounted) return;
+    Navigator.pop(context); // Tắt Loading khi đã load xong dữ liệu
 
-    // ĐỔI TỪ int? sang String? để lấy Email của khách thuê
+    if (allUsers.isEmpty) {
+      _showSnackBar("Tất cả khách hàng đều đã có trọ hoặc danh sách trống!", Colors.orange);
+      return;
+    }
+
     String? selectedTenantEmail;
     final depositController = TextEditingController(text: "0");
     DateTime selectedDate = DateTime.now();
@@ -106,7 +158,7 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
                     decoration: const InputDecoration(labelText: "Chọn Khách Thuê", border: OutlineInputBorder()),
                     items: allUsers.map((user) {
                       return DropdownMenuItem<String>(
-                        value: user.email, // Dùng email để truyền xuống backend
+                        value: user.email, // Nhờ Set seenEmails ở trên, chắc chắn value này là duy nhất
                         child: Text("${user.fullName}\n${user.phoneNumber}", overflow: TextOverflow.ellipsis),
                       );
                     }).toList(),
@@ -149,27 +201,22 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
 
                   Navigator.pop(context); // Đóng Dialog
 
-                  // Format ngày bắt đầu
                   String formattedDate = "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}";
-
-                  // Tính ngày kết thúc hợp đồng (Mặc định +1 năm, bạn có thể cho người dùng tự chọn nếu muốn)
                   DateTime endDate = DateTime(selectedDate.year + 1, selectedDate.month, selectedDate.day);
                   String formattedEndDate = "${endDate.year}-${endDate.month.toString().padLeft(2, '0')}-${endDate.day.toString().padLeft(2, '0')}";
 
                   try {
-                    // Dùng object mới chuẩn với Backend
                     AssignTenantRequest req = AssignTenantRequest(
                       roomId: room.id!,
                       tenantEmail: selectedTenantEmail!,
-                      deposit: double.parse(depositController.text),
+                      deposit: double.parse(depositController.text.trim().isEmpty ? "0" : depositController.text.trim()),
                       startDate: formattedDate,
                       endDate: formattedEndDate,
                     );
 
-                    // GỌI API: Chỉ truyền 1 biến req duy nhất
                     String msg = await LandlordManageAPI.assignTenant(req);
                     _showSnackBar(msg, Colors.green);
-                    _loadData(); // Tải lại giao diện
+                    _loadData();
                   } catch (e) {
                     _showSnackBar(e.toString().replaceAll("Exception: ", ""), Colors.red);
                   }

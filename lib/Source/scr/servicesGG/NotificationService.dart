@@ -3,10 +3,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:qlpt_frontend/Source/api/API_total.dart';
-import 'package:qlpt_frontend/Source/security/Security.dart';
 
 // 1. PHẢI THÊM HÀM NÀY NẰM NGOÀI CLASS (Hàm Top-level)
 // Dùng để xử lý thông báo khi app đang chạy ngầm hoặc đã bị tắt
@@ -18,7 +14,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 class NotificationService {
-  // ĐÃ SỬA: Thay .getInstance() thành .instance
   static final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
@@ -35,15 +30,6 @@ class NotificationService {
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       print('Người dùng đã cấp quyền nhận thông báo');
 
-      String? token = await _firebaseMessaging.getToken();
-      print("FCM Token: $token");
-
-      if (token != null) {
-        await _sendTokenToServer(token);
-      }
-
-      _firebaseMessaging.onTokenRefresh.listen(_sendTokenToServer);
-
       const AndroidInitializationSettings androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
       const InitializationSettings initSettings = InitializationSettings(android: androidInit);
       await _localNotifications.initialize(initSettings);
@@ -54,27 +40,6 @@ class NotificationService {
           _showLocalNotification(message.notification!);
         }
       });
-    }
-  }
-
-  static Future<void> _sendTokenToServer(String fcmToken) async {
-    try {
-      String? userToken = await Security.getToken();
-      if (userToken == null) return;
-
-      final url = Uri.parse('${ApiTotal.baseUrl}/api/tenant/fcm-token');
-
-      await http.put(
-        url,
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $userToken",
-        },
-        body: jsonEncode({"fcmToken": fcmToken}),
-      );
-      print("Đã gửi FCM Token lên server thành công");
-    } catch (e) {
-      print("Lỗi khi gửi FCM Token: $e");
     }
   }
 

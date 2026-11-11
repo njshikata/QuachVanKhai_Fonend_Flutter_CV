@@ -2,14 +2,16 @@
 class LoginRequest {
   String email;
   String password;
+  String? fcmToken; // THÊM TRƯỜNG NÀY ĐỂ NHẬN TOKEN FCM
 
-  LoginRequest({required this.email, required this.password});
+  LoginRequest({required this.email, required this.password, this.fcmToken});
 
   // Chuyển Object thành chuỗi JSON để gửi qua HTTP
   Map<String, dynamic> toJson() {
     return {
       "email": email,
       "password": password,
+      "fcmToken": fcmToken, // ĐƯA VÀO JSON
     };
   }
 }

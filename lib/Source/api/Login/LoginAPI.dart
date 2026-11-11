@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:firebase_messaging/firebase_messaging.dart'; // IMPORT THƯ VIỆN FCM
 import '../API_total.dart';
 import 'LoginDTO.dart';
 import '../../security/Security.dart';
@@ -7,8 +8,18 @@ import '../../security/Security.dart';
 class LoginAPI {
   // Hàm đăng nhập trả về thông báo (Thành công hoặc Lỗi)
   static Future<String> login(String email, String password) async {
+    // LẤY FCM TOKEN CỦA THIẾT BỊ TRƯỚC KHI ĐĂNG NHẬP
+    String? fcmToken;
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken();
+      print("-> FCM Token lấy được lúc đăng nhập: $fcmToken");
+    } catch (e) {
+      print("-> Lỗi không lấy được FCM Token: $e");
+    }
+
     final url = Uri.parse('${ApiTotal.baseUrl}/api/auth/login');
-    final requestBody = LoginRequest(email: email, password: password);
+    // GỬI KÈM FCM TOKEN LÊN BACKEND
+    final requestBody = LoginRequest(email: email, password: password, fcmToken: fcmToken);
 
     try {
       final response = await http.post(

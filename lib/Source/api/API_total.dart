@@ -18,19 +18,19 @@ class ApiTotal {
 
     // 2. Nếu chạy trên Trình duyệt Web (Chrome, Edge, Safari...)
     if (kIsWeb) {
-      return "http://localhost:8080";
+      return "http://180.93.115.133:8080";
     }
 
     // 3. Nếu chạy trên App Native (Bắt buộc check kIsWeb trước để Web không bị lỗi dart:io)
     if (Platform.isAndroid) {
-      return "http://10.0.2.2:8080";    // Máy ảo Android Emulator
+      return "http://180.93.115.133:8080";    // Máy ảo Android Emulator
     } else if (Platform.isIOS) {
-      return "http://127.0.0.1:8080";   // Máy ảo iOS Simulator
+      return "http://180.93.115.133:8080";   // Máy ảo iOS Simulator
     } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-      return "http://localhost:8080";   // Ứng dụng Desktop (Windows/Mac)
+      return "http://180.93.115.133:8080";   // Ứng dụng Desktop (Windows/Mac)
     }
 
     // Mặc định an toàn
-    return "http://localhost:8080";
+    return "http://180.93.115.133:8080";
   }
 }

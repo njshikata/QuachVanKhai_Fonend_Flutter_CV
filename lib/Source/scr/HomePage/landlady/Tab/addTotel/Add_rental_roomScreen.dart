@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:qlpt_frontend/Source/api/Property/LandlordManage/LandlordManageAPI.dart';
 import 'package:qlpt_frontend/Source/api/Property/LandlordManage/LandlordManageDTO.dart';
-// Đã sửa lại đường dẫn import chuẩn
+
 class AddRentalRoomScreen extends StatefulWidget {
   const AddRentalRoomScreen({super.key});
 
@@ -43,6 +43,7 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
     _fetchProvinces();
   }
 
+  // ==================== DÙNG API PHỔ BIẾN NHẤT (OPEN-API) ====================
   Future<void> _fetchProvinces() async {
     try {
       final response = await http.get(Uri.parse('https://provinces.open-api.vn/api/p/'));
@@ -81,6 +82,7 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
       debugPrint("Lỗi tải Phường/Xã: $e");
     }
   }
+  // ===========================================================================
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
@@ -119,7 +121,6 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
       }
     } catch (e) {
       if (mounted) {
-        // Cắt bỏ chữ "Exception: " của Dart
         String errorMsg = e.toString().replaceAll("Exception: ", "");
 
         ScaffoldMessenger.of(context).showSnackBar(

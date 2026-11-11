@@ -17,11 +17,11 @@ class MyRoomResponse {
 
   factory MyRoomResponse.fromJson(Map<String, dynamic> json) {
     return MyRoomResponse(
-      roomId: json['roomId'],
-      propertyName: json['propertyName'] ?? 'Khu trọ',
-      roomNumber: json['roomNumber'] ?? '',
-      propertyAddress: json['propertyAddress'],
-      basePrice: json['basePrice'] != null ? double.parse(json['basePrice'].toString()) : 0.0,
+      roomId: int.tryParse(json['roomId']?.toString() ?? '0') ?? 0,
+      propertyName: json['propertyName']?.toString() ?? 'Khu trọ',
+      roomNumber: json['roomNumber']?.toString() ?? '',
+      propertyAddress: json['propertyAddress']?.toString(),
+      basePrice: double.tryParse(json['basePrice']?.toString() ?? '0') ?? 0.0,
     );
   }
 }
@@ -34,8 +34,8 @@ class ServiceDetail {
 
   factory ServiceDetail.fromJson(Map<String, dynamic> json) {
     return ServiceDetail(
-      serviceName: json['serviceName'] ?? '',
-      appliedPrice: json['appliedPrice'] != null ? double.parse(json['appliedPrice'].toString()) : 0.0,
+      serviceName: json['serviceName']?.toString() ?? '',
+      appliedPrice: double.tryParse(json['appliedPrice']?.toString() ?? '0') ?? 0.0,
     );
   }
 }
@@ -80,25 +80,28 @@ class MyInvoiceResponse {
 
   factory MyInvoiceResponse.fromJson(Map<String, dynamic> json) {
     var list = json['extraServices'] as List?;
-    List<ServiceDetail> extraServicesList = list != null ? list.map((i) => ServiceDetail.fromJson(i)).toList() : [];
+    List<ServiceDetail> extraServicesList = list != null
+        ? list.map((i) => ServiceDetail.fromJson(i)).toList()
+        : [];
 
     return MyInvoiceResponse(
-      invoiceId: json['invoiceId'],
-      billingCycle: json['billingCycle'] ?? '',
-      dueDate: json['dueDate'],
-      totalAmount: json['totalAmount'] != null ? double.parse(json['totalAmount'].toString()) : 0.0,
-      status: json['status'] ?? 'UNPAID',
-      meterImageUrl: json['meterImageUrl'],
+      // Dùng tryParse an toàn cho mọi kiểu dữ liệu trả về (String hay Int đều được)
+      invoiceId: int.tryParse(json['invoiceId']?.toString() ?? '0') ?? 0,
+      billingCycle: json['billingCycle']?.toString() ?? '',
+      dueDate: json['dueDate']?.toString(),
+      totalAmount: double.tryParse(json['totalAmount']?.toString() ?? '0') ?? 0.0,
+      status: json['status']?.toString() ?? 'UNPAID',
+      meterImageUrl: json['meterImageUrl']?.toString(),
 
-      oldElectricity: json['oldElectricity'] ?? 0,
-      newElectricity: json['newElectricity'] ?? 0,
-      electricUsage: json['electricUsage'] ?? 0,
-      electricTotal: json['electricTotal'] != null ? double.parse(json['electricTotal'].toString()) : 0.0,
+      oldElectricity: int.tryParse(json['oldElectricity']?.toString() ?? '0') ?? 0,
+      newElectricity: int.tryParse(json['newElectricity']?.toString() ?? '0') ?? 0,
+      electricUsage: int.tryParse(json['electricUsage']?.toString() ?? '0') ?? 0,
+      electricTotal: double.tryParse(json['electricTotal']?.toString() ?? '0') ?? 0.0,
 
-      oldWater: json['oldWater'] ?? 0,
-      newWater: json['newWater'] ?? 0,
-      waterUsage: json['waterUsage'] ?? 0,
-      waterTotal: json['waterTotal'] != null ? double.parse(json['waterTotal'].toString()) : 0.0,
+      oldWater: int.tryParse(json['oldWater']?.toString() ?? '0') ?? 0,
+      newWater: int.tryParse(json['newWater']?.toString() ?? '0') ?? 0,
+      waterUsage: int.tryParse(json['waterUsage']?.toString() ?? '0') ?? 0,
+      waterTotal: double.tryParse(json['waterTotal']?.toString() ?? '0') ?? 0.0,
 
       extraServices: extraServicesList,
     );

@@ -5,14 +5,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+import 'package:qlpt_frontend/Source/api/API_total.dart';
 import 'package:qlpt_frontend/Source/api/User/Total/UserAPI.dart';
 import 'package:qlpt_frontend/Source/api/User/Total/UserDTO.dart';
-// ĐÃ THÊM IMPORT PAY API
 import 'package:qlpt_frontend/Source/api/User/Pay/PayAPI.dart';
 import 'package:qlpt_frontend/Source/api/User/Pay/PayDTO.dart';
-
 import 'package:qlpt_frontend/Source/scr/HomePage/User/UseInforScreen.dart';
-import 'package:qlpt_frontend/Source/scr/Login/LoginScreen.dart';
 import 'package:qlpt_frontend/Source/security/Security.dart';
 
 class UserScreen extends StatefulWidget {
@@ -34,6 +34,38 @@ class _UserScreenState extends State<UserScreen> {
   void initState() {
     super.initState();
     _fetchMyRoom();
+
+    // --- KHỞI TẠO LẮNG NGHE FCM Ở ĐÂY ---
+    _setupFCMListener();
+  }
+
+  // --- HÀM LẮNG NGHE FCM ---
+  // --- HÀM LẮNG NGHE FCM ---
+  void _setupFCMListener() {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print("UserScreen nhận được FCM: ${message.notification?.title}");
+
+      if (message.notification?.title == "Thanh toán tự động thành công" ||
+          message.notification?.title == "Thanh toán thành công" ||
+          message.notification?.title == "Cập nhật giá dịch vụ" ||
+          message.notification?.title == "Hóa đơn mới") {
+
+        // CHỈ ĐÓNG KHI CÓ POPUP/DIALOG ĐANG MỞ (Tránh lỗi văng hẳn ra ngoài UserScreen)
+        bool isPopupOpen = ModalRoute.of(context)?.isCurrent != true;
+        if (isPopupOpen && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+
+        // 2. Hiển thị thông báo trên màn hình
+        _showSnackBar("🎉 ${message.notification?.body}", Colors.green);
+
+        // 3. Cập nhật lại thông tin phòng
+        _fetchMyRoom();
+
+        // GHI CHÚ: Nếu đang mở danh sách hóa đơn, nó sẽ không tự load lại (vì modal là 1 route độc lập).
+        // Bạn cần kéo xuống tắt bảng hóa đơn đi và bật lại thì API getMyInvoices mới được gọi.
+      }
+    });
   }
 
   void _showSnackBar(String message, Color color) {
@@ -63,14 +95,24 @@ class _UserScreenState extends State<UserScreen> {
     }
   }
 
-  // ================= HÀM XEM ẢNH CÔNG TƠ =================
-  void _showMeterImageDialog(String imageUrl) {
-    String fixedUrl = imageUrl;
-    if (!kIsWeb) {
-      if (Platform.isAndroid) {
-        fixedUrl = imageUrl.replaceAll("localhost", "10.0.2.2");
-      }
+  // ================= HÀM XEM ẢNH CÔNG TƠ (ĐÃ SỬA CHUẨN CHO APK & MÁY ẢO) =================
+  void _showMeterImageDialog(String imageUrl) async {
+    // 1. Lấy JWT Token phòng trường hợp Backend bắt xác thực khi tải ảnh
+    String? token = await Security.getToken();
+
+    // 2. Chuẩn hóa URL: Thay http://localhost:8080 bằng đúng baseUrl hiện tại của App
+    String fixedUrl = imageUrl.trim();
+    if (fixedUrl.contains("http://localhost:8080")) {
+      fixedUrl = fixedUrl.replaceAll("http://localhost:8080", ApiTotal.baseUrl);
+    } else if (!fixedUrl.startsWith("http")) {
+      fixedUrl = "${ApiTotal.baseUrl}${fixedUrl.startsWith('/') ? '' : '/'}$fixedUrl";
     }
+
+    print("========== ĐANG TẢI ẢNH CÔNG TƠ ==========");
+    print("URL gốc: $imageUrl");
+    print("URL sau khi xử lý: $fixedUrl");
+
+    if (!mounted) return;
 
     showDialog(
         context: context,
@@ -108,6 +150,11 @@ class _UserScreenState extends State<UserScreen> {
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(
                         fixedUrl,
+                        // Truyền kèm Header xác thực và bỏ qua cảnh báo nếu dùng Ngrok
+                        headers: {
+                          if (token != null) "Authorization": "Bearer $token",
+                          "ngrok-skip-browser-warning": "true",
+                        },
                         fit: BoxFit.contain,
                         loadingBuilder: (context, child, loadingProgress) {
                           if (loadingProgress == null) return child;
@@ -117,15 +164,27 @@ class _UserScreenState extends State<UserScreen> {
                           );
                         },
                         errorBuilder: (context, error, stackTrace) {
+                          print("-> LỖI TẢI ẢNH CÔNG TƠ: $error");
                           return SizedBox(
-                            height: 200,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(Icons.broken_image, size: 50, color: Colors.grey),
-                                SizedBox(height: 10),
-                                Text("Không thể tải ảnh", style: TextStyle(color: Colors.grey)),
-                              ],
+                            height: 220,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                                  const SizedBox(height: 10),
+                                  const Text("Không thể tải ảnh công tơ", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    fixedUrl,
+                                    style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         },
@@ -147,7 +206,6 @@ class _UserScreenState extends State<UserScreen> {
 
   // ================= HÀM XỬ LÝ THANH TOÁN =================
   void _showPaymentDialog(int invoiceId) async {
-    // Hiện loading xoay xoay mờ màn hình
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -155,20 +213,16 @@ class _UserScreenState extends State<UserScreen> {
     );
 
     try {
-      // Gọi API lấy dữ liệu QR
       VietQRResponse qrData = await PayAPI.getVietQR(invoiceId);
 
-      // Tắt loading
       if (!mounted) return;
       Navigator.pop(context);
 
-      // Fix URL ảnh cho máy ảo Android
       String qrImageUrl = qrData.qrUrl;
-      if (!kIsWeb && Platform.isAndroid) {
-        qrImageUrl = qrImageUrl.replaceAll("localhost", "10.0.2.2");
+      if (qrImageUrl.contains("http://localhost:8080")) {
+        qrImageUrl = qrImageUrl.replaceAll("http://localhost:8080", ApiTotal.baseUrl);
       }
 
-      // Hiện Popup QR Code
       if (!mounted) return;
       showDialog(
           context: context,
@@ -201,7 +255,6 @@ class _UserScreenState extends State<UserScreen> {
                     const Text("Quét mã QR bằng ứng dụng ngân hàng", style: TextStyle(fontSize: 14, color: Colors.grey)),
                     const SizedBox(height: 16),
 
-                    // Hiển thị ảnh QR Code
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Image.network(
@@ -226,7 +279,6 @@ class _UserScreenState extends State<UserScreen> {
                     const SizedBox(height: 16),
                     const Divider(),
 
-                    // Hiển thị thông tin text (phòng trường hợp lỗi ảnh)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                       child: Column(
@@ -251,7 +303,6 @@ class _UserScreenState extends State<UserScreen> {
           }
       );
     } catch (e) {
-      // Tắt loading nếu lỗi
       if (!mounted) return;
       Navigator.pop(context);
       _showSnackBar(e.toString().replaceAll("Exception: ", ""), Colors.red);
@@ -419,9 +470,7 @@ class _UserScreenState extends State<UserScreen> {
                                               if (!isPaid)
                                                 ElevatedButton.icon(
                                                   onPressed: () {
-                                                    // Đóng bottom sheet danh sách hóa đơn trước
                                                     Navigator.pop(context);
-                                                    // Gọi hàm mở dialog thanh toán (Cần truyền ID thật, ở đây giả sử API trả về ID)
                                                     _showPaymentDialog(inv.invoiceId!);
                                                   },
                                                   icon: const Icon(Icons.qr_code_2, color: Colors.white, size: 18),
@@ -489,7 +538,6 @@ class _UserScreenState extends State<UserScreen> {
           const Text("Phòng bạn đang thuê:", style: TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
 
-          // Thẻ thông tin phòng
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -525,7 +573,6 @@ class _UserScreenState extends State<UserScreen> {
 
           const SizedBox(height: 30),
 
-          // Nút xem Lịch sử Hóa đơn
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),

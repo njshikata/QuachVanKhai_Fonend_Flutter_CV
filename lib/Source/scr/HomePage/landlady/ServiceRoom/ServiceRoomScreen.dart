@@ -67,7 +67,6 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
         }
       }
 
-      // THÊM ĐIỀU KIỆN MỞ RỘNG: if (mounted)
       if (mounted) {
         setState(() {
           _allProperties = properties;
@@ -77,7 +76,6 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
         });
       }
     } catch (e) {
-      // THÊM ĐIỀU KIỆN MỞ RỘNG: if (mounted)
       if (mounted) {
         setState(() {
           _errorMessage = e.toString().replaceAll("Exception: ", "");
@@ -103,7 +101,6 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
       }
     }
 
-    // THÊM ĐIỀU KIỆN MỞ RỘNG: if (mounted)
     if (mounted) {
       setState(() {
         _roomBillingMap = tempMap;
@@ -686,18 +683,63 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
                         children: [
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade200, foregroundColor: Colors.black87),
-                            onPressed: () async {
-                              final pickedFile = await picker.pickImage(source: ImageSource.camera);
-                              if (pickedFile != null) setStateDialog(() => selectedImage = pickedFile);
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                                ),
+                                builder: (BuildContext bc) {
+                                  return SafeArea(
+                                    child: Wrap(
+                                      children: <Widget>[
+                                        ListTile(
+                                          leading: const Icon(Icons.photo_library, color: Colors.blue),
+                                          title: const Text('Tải ảnh có sẵn (Thư viện)'),
+                                          onTap: () async {
+                                            Navigator.of(context).pop();
+                                            try {
+                                              final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                                              if (pickedFile != null) {
+                                                setStateDialog(() => selectedImage = pickedFile);
+                                              }
+                                            } catch (e) {
+                                              _showSnackBar("Lỗi mở thư viện: $e", Colors.red);
+                                            }
+                                          },
+                                        ),
+                                        ListTile(
+                                          leading: const Icon(Icons.photo_camera, color: Colors.orange),
+                                          title: const Text('Chụp trực tiếp (Camera)'),
+                                          onTap: () async {
+                                            Navigator.of(context).pop();
+                                            try {
+                                              final pickedFile = await picker.pickImage(source: ImageSource.camera);
+                                              if (pickedFile != null) {
+                                                setStateDialog(() => selectedImage = pickedFile);
+                                              }
+                                            } catch (e) {
+                                              _showSnackBar("Lỗi mở camera: $e", Colors.red);
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
                             },
-                            icon: const Icon(Icons.camera_alt),
-                            label: const Text("Chụp ảnh"),
+                            icon: const Icon(Icons.add_a_photo),
+                            label: const Text("Tải / Chụp ảnh"),
                           ),
                           const SizedBox(width: 10),
-                          if (selectedImage != null)
-                            const Text("Đã chụp ✓", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))
-                          else
-                            const Text("Chưa có ảnh!", style: TextStyle(color: Colors.red, fontSize: 12)),
+
+                          // ĐÃ SỬA: Bọc khối Text bằng Expanded để tự động co giãn không gian thừa
+                          Expanded(
+                            child: selectedImage != null
+                                ? const Text("Đã có ảnh ✓", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))
+                                : const Text("Chưa có ảnh!", style: TextStyle(color: Colors.red, fontSize: 12)),
+                          ),
                         ],
                       ),
                     ],
@@ -710,7 +752,7 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
                   onPressed: () async {
                     if (selectedImage == null) {
-                      _showSnackBar("Bắt buộc phải chụp ảnh công tơ!", Colors.red);
+                      _showSnackBar("Bắt buộc phải chụp/chọn ảnh công tơ!", Colors.red);
                       return;
                     }
 
