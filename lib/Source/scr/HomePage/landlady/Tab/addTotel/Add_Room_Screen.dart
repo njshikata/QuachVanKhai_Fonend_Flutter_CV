@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:qlpt_frontend/Source/api/Property/LandlordManage/LandlordManageAPI.dart';
 import 'package:qlpt_frontend/Source/api/Property/LandlordManage/LandlordManageDTO.dart';
-// Đã sửa lại đường dẫn import chuẩn
 
 class AddRoomScreen extends StatefulWidget {
   final int propertyId;
@@ -29,6 +28,16 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
   final TextEditingController _amenitiesController = TextEditingController();
 
   bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _roomNumberController.dispose();
+    _areaController.dispose();
+    _capacityController.dispose();
+    _priceController.dispose();
+    _amenitiesController.dispose();
+    super.dispose();
+  }
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
@@ -65,7 +74,6 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
       }
     } catch (e) {
       if (mounted) {
-        // Cắt bỏ chữ "Exception: " của Dart để lấy thông báo chuẩn từ Backend (Ví dụ: "Lỗi: Số phòng [101] đã tồn tại...")
         String errorMsg = e.toString().replaceAll("Exception: ", "");
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -147,9 +155,7 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-
               _buildTextField(controller: _roomNumberController, label: "Số / Tên phòng (VD: 101)", icon: Icons.meeting_room),
-
               Row(
                 children: [
                   Expanded(child: _buildTextField(controller: _areaController, label: "Diện tích (m2)", icon: Icons.straighten, isNumber: true)),
@@ -157,12 +163,9 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
                   Expanded(child: _buildTextField(controller: _capacityController, label: "Số người tối đa", icon: Icons.group, isNumber: true)),
                 ],
               ),
-
               _buildTextField(controller: _priceController, label: "Giá phòng (VNĐ/Tháng)", icon: Icons.attach_money, isNumber: true),
               _buildTextField(controller: _amenitiesController, label: "Tiện ích (VD: Điều hòa, Máy giặt)", icon: Icons.kitchen),
-
               const SizedBox(height: 20),
-
               SizedBox(
                 width: double.infinity,
                 height: 50,

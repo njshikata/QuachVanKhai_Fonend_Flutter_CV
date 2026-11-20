@@ -13,6 +13,8 @@ import 'package:qlpt_frontend/Source/api/User/Total/UserDTO.dart';
 import 'package:qlpt_frontend/Source/api/User/Pay/PayAPI.dart';
 import 'package:qlpt_frontend/Source/api/User/Pay/PayDTO.dart';
 import 'package:qlpt_frontend/Source/scr/HomePage/User/UseInforScreen.dart';
+import 'package:qlpt_frontend/Source/scr/HomePage/User/Card/MyCardScreen.dart';
+import 'package:qlpt_frontend/Source/cache/AppNetworkImage.dart';
 import 'package:qlpt_frontend/Source/security/Security.dart';
 
 class UserScreen extends StatefulWidget {
@@ -33,6 +35,15 @@ class _UserScreenState extends State<UserScreen> {
   @override
   void initState() {
     super.initState();
+    // Hiện ngay thông tin phòng lưu trong máy, sau đó đồng bộ với server (ETag)
+    UserAPI.cachedMyRoom().then((cached) {
+      if (mounted && cached != null && _myRoom == null) {
+        setState(() {
+          _myRoom = cached;
+          _isLoading = false;
+        });
+      }
+    });
     _fetchMyRoom();
 
     // --- KHỞI TẠO LẮNG NGHE FCM Ở ĐÂY ---
@@ -78,16 +89,18 @@ class _UserScreenState extends State<UserScreen> {
   // Gọi API lấy thông tin phòng đang thuê
   Future<void> _fetchMyRoom() async {
     setState(() {
-      _isLoading = true;
+      _isLoading = _myRoom == null; // Đã có dữ liệu cũ thì giữ nguyên trên màn hình, khỏi vòng xoay
       _errorMessage = "";
     });
     try {
       var room = await UserAPI.getMyRoomInfo();
+      if (!mounted) return;
       setState(() {
         _myRoom = room;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.toString().replaceAll("Exception: ", "");
         _isLoading = false;
@@ -148,22 +161,21 @@ class _UserScreenState extends State<UserScreen> {
                     maxScale: 4,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        fixedUrl,
+                      // Ảnh cache trên đĩa (≤90 ngày), giải mã theo bề rộng màn hình thay vì ảnh gốc
+                      child: AppNetworkImage(
+                        url: fixedUrl,
+                        authenticated: false,
                         // Truyền kèm Header xác thực và bỏ qua cảnh báo nếu dùng Ngrok
-                        headers: {
+                        extraHeaders: {
                           if (token != null) "Authorization": "Bearer $token",
                           "ngrok-skip-browser-warning": "true",
                         },
                         fit: BoxFit.contain,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return const SizedBox(
-                            height: 300,
-                            child: Center(child: CircularProgressIndicator(color: Colors.green)),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
+                        placeholder: (context) => const SizedBox(
+                          height: 300,
+                          child: Center(child: CircularProgressIndicator(color: Colors.green)),
+                        ),
+                        errorBuilder: (context, error) {
                           print("-> LỖI TẢI ẢNH CÔNG TƠ: $error");
                           return SizedBox(
                             height: 220,
@@ -257,19 +269,17 @@ class _UserScreenState extends State<UserScreen> {
 
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        qrImageUrl,
+                      child: AppNetworkImage(
+                        url: qrImageUrl,
+                        authenticated: false,
                         height: 250,
                         width: 250,
                         fit: BoxFit.cover,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return const SizedBox(
-                            height: 250, width: 250,
-                            child: Center(child: CircularProgressIndicator(color: Colors.orange)),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) => const SizedBox(
+                        placeholder: (context) => const SizedBox(
+                          height: 250, width: 250,
+                          child: Center(child: CircularProgressIndicator(color: Colors.orange)),
+                        ),
+                        errorBuilder: (context, error) => const SizedBox(
                           height: 250, width: 250,
                           child: Icon(Icons.broken_image, size: 50, color: Colors.grey),
                         ),
@@ -605,18 +615,19 @@ class _UserScreenState extends State<UserScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text(_currentIndex == 0 ? "Quản Lý Tiền Trọ" : "Cá Nhân", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: Text(_currentIndex == 0 ? "Quản Lý Tiền Trọ" : (_currentIndex == 1 ? "Thẻ của tôi" : "Cá Nhân"), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         backgroundColor: Colors.green,
         elevation: 0,
         centerTitle: true,
       ),
-      body: _currentIndex == 0 ? _buildHomeTab() : _buildProfileTab(),
+      body: _currentIndex == 0 ? _buildHomeTab() : (_currentIndex == 1 ? const MyCardScreen() : _buildProfileTab()),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         selectedItemColor: Colors.green,
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: "Phòng của tôi"),
+          BottomNavigationBarItem(icon: Icon(Icons.credit_card), label: "Thẻ của tôi"),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: "Cá nhân"),
         ],
       ),

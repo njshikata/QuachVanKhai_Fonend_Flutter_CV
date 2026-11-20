@@ -13,8 +13,8 @@ class RegisterAPI {
     try {
       final response = await http.post(
         url,
-        // Public API nên chỉ cần báo định dạng JSON, KHÔNG CẦN Token
-        headers: {"Content-Type": "application/json"},
+        // DÙNG publicHeaders ĐỂ ĐÍNH KÈM CHỮ KÝ RSA CHỐNG SPAM (API công khai không cần Token)
+        headers: ApiTotal.publicHeaders,
         body: jsonEncode(request.toJson()),
       );
 

@@ -1,51 +1,28 @@
 // Đường dẫn: lib/Source/api/Manage_User/Manage_User_API.dart
 
+import 'package:qlpt_frontend/Source/api/JsonIsolate.dart';
+import 'package:qlpt_frontend/Source/api/SyncedApi.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:qlpt_frontend/Source/api/API_total.dart';
-import 'package:qlpt_frontend/Source/security/Security.dart';
 import 'Manage_User_DTO.dart';
 
 class ManageUserAPI {
   static String get baseUrl => '${ApiTotal.baseUrl}/api/landlady/users';
 
-  static Future<Map<String, String>> _getHeaders() async {
-    String? token = await Security.getToken();
-    if (token != null && token.isNotEmpty) {
-      return {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-      };
-    } else {
-      return {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
-    }
+  // SỬ DỤNG HÀM TỔNG TỪ ApiTotal ĐỂ TỰ ĐỘNG CÓ RSA HANDSHAKE VÀ TOKEN
+  static Future _getHeaders() async {
+    return await ApiTotal.getAuthHeaders();
   }
 
+  // GET dùng ETag + database phụ (SĐT/email/CCCD không ghi xuống máy)
   static Future<List<ManageUserDTO>> getAllUsers() async {
-    final headers = await _getHeaders();
-    final response = await http.get(Uri.parse(baseUrl), headers: headers);
-
-    if (response.statusCode == 200) {
-      List<dynamic> jsonList = jsonDecode(utf8.decode(response.bodyBytes));
-      return jsonList.map((json) => ManageUserDTO.fromJson(json)).toList();
-    } else {
-      throw Exception(utf8.decode(response.bodyBytes));
-    }
+    final List<dynamic> jsonList = await SyncedApi.getJson('/api/landlady/users');
+    return jsonList.map((json) => ManageUserDTO.fromJson(json)).toList();
   }
 
   static Future<ManageUserDTO> getUserById(int id) async {
-    final headers = await _getHeaders();
-    final response = await http.get(Uri.parse('$baseUrl/$id'), headers: headers);
-
-    if (response.statusCode == 200) {
-      return ManageUserDTO.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
-    } else {
-      throw Exception(utf8.decode(response.bodyBytes));
-    }
+    return ManageUserDTO.fromJson(await SyncedApi.getJson('/api/landlady/users/$id'));
   }
 
   static Future<ManageUserDTO> createUser(ManageUserDTO userDTO) async {
@@ -57,7 +34,7 @@ class ManageUserAPI {
     );
 
     if (response.statusCode == 201 || response.statusCode == 200) {
-      return ManageUserDTO.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+      return ManageUserDTO.fromJson(await JsonIsolate.decode(response.bodyBytes));
     } else {
       throw Exception(utf8.decode(response.bodyBytes));
     }
@@ -72,22 +49,15 @@ class ManageUserAPI {
     );
 
     if (response.statusCode == 200) {
-      return ManageUserDTO.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+      return ManageUserDTO.fromJson(await JsonIsolate.decode(response.bodyBytes));
     } else {
       throw Exception(utf8.decode(response.bodyBytes));
     }
   }
 
-  // === MỚI: THAY THẾ HÀM XÓA BẰNG HÀM LẤY LỊCH SỬ ===
+  // === LẤY LỊCH SỬ NGƯỜI DÙNG ===
   static Future<List<TenantHistory>> getUserHistory(int id) async {
-    final headers = await _getHeaders();
-    final response = await http.get(Uri.parse('$baseUrl/$id/history'), headers: headers);
-
-    if (response.statusCode == 200) {
-      List<dynamic> jsonList = jsonDecode(utf8.decode(response.bodyBytes));
-      return jsonList.map((json) => TenantHistory.fromJson(json)).toList();
-    } else {
-      throw Exception(utf8.decode(response.bodyBytes));
-    }
+    final List<dynamic> jsonList = await SyncedApi.getJson('/api/landlady/users/$id/history');
+    return jsonList.map((json) => TenantHistory.fromJson(json)).toList();
   }
 }

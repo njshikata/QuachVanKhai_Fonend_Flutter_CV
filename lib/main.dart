@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:qlpt_frontend/Source/scr/servicesGG/NotificationService.dart';
 import 'Source/scr/Login/LoginScreen.dart';
+import 'Source/perf/PerfFlags.dart';
+import 'Source/perf/PerfMonitor.dart';
+import 'Source/perf/PerfOverlay.dart';
 
 import 'firebase_options.dart';
 
@@ -36,6 +39,9 @@ void main() async {
     print("Lỗi khởi tạo hệ thống: $e");
   }
 
+  // Cấu hình bật/tắt tối ưu + bảng FPS/RAM (màn "Hiệu năng & Demo")
+  await PerfFlags.load();
+
   // 4. Chạy ứng dụng
   runApp(const MyApp());
 }
@@ -47,6 +53,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      navigatorKey: PerfMonitor.navigatorKey,
+      builder: (context, child) => PerfOverlayHost(child: child ?? const SizedBox.shrink()),
       title: 'Quản Lý Phòng Trọ',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),

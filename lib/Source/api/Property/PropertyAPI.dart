@@ -1,47 +1,35 @@
 // Đường dẫn: lib/Source/api/Property/PropertyAPI.dart
 
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../API_total.dart';
+import 'package:qlpt_frontend/Source/api/SyncedApi.dart';
 import 'PropertyDTO.dart';
-import '../../security/Security.dart';
 
 class PropertyAPI {
+  static const String _dashboardPath = '/api/landlord/properties/dashboard';
 
-  // Hàm gọi API lấy dữ liệu Dashboard Chủ Trọ
+  static List<LandlordPropertyDTO> _parse(dynamic data) =>
+      (data as List).map((json) => LandlordPropertyDTO.fromJson(json)).toList();
+
+  // Hàm gọi API lấy dữ liệu Dashboard Chủ Trọ (ETag: dữ liệu không đổi -> server trả 304, không tải lại)
   static Future<List<LandlordPropertyDTO>> getDashboardData() async {
-    final url = Uri.parse('${ApiTotal.baseUrl}/api/landlord/properties/dashboard');
-
-    // 1. Mở két sắt lấy Token
-    String? token = await Security.getToken();
-
-    // Nếu không có token (chưa đăng nhập hoặc bị lỗi), trả về list rỗng hoặc ném lỗi
-    if (token == null || token.isEmpty) {
-      throw Exception("Lỗi Bảo Mật: Bạn chưa đăng nhập (Không tìm thấy Token)!");
-    }
-
     try {
-      // 2. Gọi API kèm Token vào Header
-      final response = await http.get(
-        url,
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $token", // Trình vé Token cho Spring Boot
-        },
-      );
-
-      if (response.statusCode == 200) {
-        // 3. Decode JSON và trả về dạng List<LandlordPropertyDTO>
-        final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
-
-        return data.map((json) => LandlordPropertyDTO.fromJson(json)).toList();
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
+      return _parse(await SyncedApi.getJson(_dashboardPath));
+    } on ApiStatusException catch (e) {
+      if (e.statusCode == 401 || e.statusCode == 403) {
         throw Exception("Phiên đăng nhập hết hạn hoặc bạn không có quyền Chủ trọ!");
-      } else {
-        throw Exception("Lỗi server: ${response.statusCode}");
       }
+      throw Exception("Lỗi server: ${e.statusCode}");
     } catch (e) {
       throw Exception("Không thể kết nối máy chủ: $e");
+    }
+  }
+
+  /// Bản lưu trong máy (có thể thiếu SĐT/email) để vẽ màn hình ngay, null nếu chưa có.
+  static Future<List<LandlordPropertyDTO>?> cachedDashboard() async {
+    try {
+      final data = await SyncedApi.peek(_dashboardPath);
+      return data == null ? null : _parse(data);
+    } catch (_) {
+      return null;
     }
   }
 }

@@ -18,6 +18,7 @@ class Footer extends StatelessWidget {
       selectedItemColor: Colors.blueAccent, // Màu khi được chọn
       unselectedItemColor: Colors.grey,     // Màu khi không được chọn
       showUnselectedLabels: true,
+      type: BottomNavigationBarType.fixed, // 5 mục -> giữ nguyên nền, không bị kiểu "shifting"
       items: const [
         BottomNavigationBarItem(
           icon: Icon(Icons.apartment),
@@ -25,7 +26,15 @@ class Footer extends StatelessWidget {
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.dashboard_customize),
-          label: 'Quản Lý',
+          label: 'Dịch vụ',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.people_alt),
+          label: 'Người dùng',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.credit_card),
+          label: 'Thẻ',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.settings),

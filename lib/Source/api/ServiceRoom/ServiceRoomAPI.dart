@@ -1,74 +1,53 @@
 // Đường dẫn: lib/Source/api/ServiceRoom/ServiceRoomAPI.dart
 
+import 'package:qlpt_frontend/Source/api/JsonIsolate.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:qlpt_frontend/Source/api/API_total.dart';
-import 'package:qlpt_frontend/Source/security/Security.dart';
+import 'package:qlpt_frontend/Source/api/SyncedApi.dart';
 import 'ServiceRoomDTO.dart';
 
 class ServiceRoomAPI {
   static String get baseUrl => '${ApiTotal.baseUrl}/api/landlord/room-services';
 
-  static Future<Map<String, String>> _getHeaders() async {
-    String? token = await Security.getToken();
-    if (token == null || token.isEmpty) {
-      throw Exception("Vui lòng đăng nhập lại!");
-    }
-    return {
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      "Authorization": "Bearer $token",
-    };
+  // SỬ DỤNG HÀM TỔNG TỪ ApiTotal ĐỂ TỰ ĐỘNG CÓ RSA HANDSHAKE VÀ TOKEN
+  static Future _getHeaders() async {
+    return await ApiTotal.getAuthHeaders();
   }
 
+  // 3 API đọc dưới đây dùng ETag (304 khi không đổi) + database phụ
+  static const String _path = '/api/landlord/room-services';
+
   static Future<List<CatalogResponse>> getCatalog() async {
-    final url = Uri.parse('$baseUrl/catalog');
     try {
-      final response = await http.get(url, headers: await _getHeaders());
-      if (response.statusCode == 200) {
-        List<dynamic> jsonList = jsonDecode(utf8.decode(response.bodyBytes));
-        return jsonList.map((json) => CatalogResponse.fromJson(json)).toList();
-      } else {
-        throw Exception(utf8.decode(response.bodyBytes));
-      }
+      final List<dynamic> jsonList = await SyncedApi.getJson('$_path/catalog');
+      return jsonList.map((json) => CatalogResponse.fromJson(json)).toList();
     } catch (e) {
       throw Exception(e.toString().replaceAll("Exception: ", ""));
     }
   }
 
   static Future<RoomBillingSummary> getRoomBillingSummary(int roomId) async {
-    final url = Uri.parse('$baseUrl/room/$roomId');
     try {
-      final response = await http.get(url, headers: await _getHeaders());
-      if (response.statusCode == 200) {
-        return RoomBillingSummary.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
-      } else {
-        throw Exception(utf8.decode(response.bodyBytes));
-      }
+      return RoomBillingSummary.fromJson(await SyncedApi.getJson('$_path/room/$roomId'));
     } catch (e) {
       throw Exception(e.toString().replaceAll("Exception: ", ""));
     }
   }
 
-  // --- MỚI THÊM: Lấy Lịch sử Hóa Đơn ---
+  // --- Lấy Lịch sử Hóa Đơn ---
   static Future<List<InvoiceHistoryResponse>> getInvoiceHistory(int roomId) async {
-    final url = Uri.parse('$baseUrl/room/$roomId/history');
     try {
-      final response = await http.get(url, headers: await _getHeaders());
-      if (response.statusCode == 200) {
-        List<dynamic> jsonList = jsonDecode(utf8.decode(response.bodyBytes));
-        return jsonList.map((json) => InvoiceHistoryResponse.fromJson(json)).toList();
-      } else {
-        throw Exception(utf8.decode(response.bodyBytes));
-      }
+      final List<dynamic> jsonList = await SyncedApi.getJson('$_path/room/$roomId/history');
+      return jsonList.map((json) => InvoiceHistoryResponse.fromJson(json)).toList();
     } catch (e) {
       throw Exception(e.toString().replaceAll("Exception: ", ""));
     }
   }
 
-  // --- MỚI THÊM: Xác nhận thu tiền mặt ---
+  // --- Xác nhận thu tiền mặt ---
   static Future<String> confirmCashPayment(int invoiceId) async {
     final url = Uri.parse('$baseUrl/invoice/$invoiceId/pay-cash');
     try {
@@ -132,15 +111,13 @@ class ServiceRoomAPI {
   }
 
   static Future<UtilityReadingResponse> recordUtility(int roomId, RecordUtilityRequest requestData, XFile imageFile) async {
-    String? token = await Security.getToken();
     var uri = Uri.parse('$baseUrl/room/$roomId/record-utility');
 
     var request = http.MultipartRequest('POST', uri);
 
-    if (token != null && token.isNotEmpty) {
-      request.headers['Authorization'] = 'Bearer $token';
-    }
-
+    // LẤY TOÀN BỘ HEADERS BẢO MẬT (RSA PAYLOAD + JWT TOKEN) TỪ ApiTotal
+    Map<String, String> authHeaders = await ApiTotal.getAuthHeaders();
+    request.headers.addAll(authHeaders);
     request.headers['Accept'] = 'application/json';
 
     request.files.add(
@@ -165,7 +142,7 @@ class ServiceRoomAPI {
       var response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        return UtilityReadingResponse.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+        return UtilityReadingResponse.fromJson(await JsonIsolate.decode(response.bodyBytes));
       } else {
         throw Exception(utf8.decode(response.bodyBytes));
       }

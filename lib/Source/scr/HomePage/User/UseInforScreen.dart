@@ -1,6 +1,7 @@
 // Đường dẫn: lib/Source/scr/HomePage/User/UseInforScreen.dart
 
 import 'package:flutter/material.dart';
+import 'package:qlpt_frontend/Source/perf/PerfLabScreen.dart';
 import 'package:qlpt_frontend/Source/api/User/Infor/InforAPI.dart';
 import 'package:qlpt_frontend/Source/api/User/Infor/InforDTO.dart';
 import 'package:qlpt_frontend/Source/scr/Login/LoginScreen.dart';
@@ -14,6 +15,21 @@ class UseInforScreen extends StatefulWidget {
 }
 
 class _UseInforScreenState extends State<UseInforScreen> {
+  late Future<UserProfileResponse> _profileFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _profileFuture = InforAPI.getMyProfile();
+  }
+
+  Future<void> _refreshProfile() async {
+    final future = InforAPI.getMyProfile();
+    setState(() {
+      _profileFuture = future;
+    });
+    await future;
+  }
 
   Widget _buildInfoRow(IconData icon, String title, String value) {
     return Padding(
@@ -47,7 +63,7 @@ class _UseInforScreenState extends State<UseInforScreen> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<UserProfileResponse>(
-      future: InforAPI.getMyProfile(),
+      future: _profileFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: Colors.green));
@@ -61,6 +77,8 @@ class _UseInforScreenState extends State<UseInforScreen> {
                 const Icon(Icons.error_outline, color: Colors.red, size: 60),
                 const SizedBox(height: 16),
                 Text("Lỗi tải thông tin:\n${snapshot.error}", textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
+                const SizedBox(height: 12),
+                ElevatedButton(onPressed: _refreshProfile, child: const Text("Thử lại")),
               ],
             ),
           );
@@ -72,15 +90,12 @@ class _UseInforScreenState extends State<UseInforScreen> {
         }
 
         return RefreshIndicator(
-          onRefresh: () async {
-            setState(() {});
-          },
+          onRefresh: _refreshProfile,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                // Khối Avatar
                 Center(
                   child: Container(
                     padding: const EdgeInsets.all(4),
@@ -106,10 +121,7 @@ class _UseInforScreenState extends State<UseInforScreen> {
                   decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(12)),
                   child: const Text("Khách Thuê", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                 ),
-
                 const SizedBox(height: 30),
-
-                // Khối Thông tin
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -127,10 +139,20 @@ class _UseInforScreenState extends State<UseInforScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 40),
-
-                // Nút Đăng xuất
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PerfLabScreen())),
+                    icon: const Icon(Icons.speed),
+                    label: const Text("Hiệu năng & Demo"),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(

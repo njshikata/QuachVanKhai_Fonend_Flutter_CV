@@ -12,20 +12,24 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // Các Controller để lấy dữ liệu từ Text Field
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  bool _isPasswordVisible = false; // Trạng thái ẩn/hiện mật khẩu
-  bool _isLoading = false; // Trạng thái đang gọi API (Hiển thị loading)
-  String _errorMessage = ""; // Chứa thông báo lỗi từ Server
+  bool _isPasswordVisible = false;
+  bool _isLoading = false;
+  String _errorMessage = "";
 
-  // Hàm xử lý khi bấm nút Đăng Nhập
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleLogin() async {
     String email = _emailController.text.trim();
     String password = _passwordController.text.trim();
 
-    // Validate dữ liệu trống
     if (email.isEmpty || password.isEmpty) {
       setState(() {
         _errorMessage = "Vui lòng nhập đầy đủ Email và Mật khẩu!";
@@ -33,28 +37,23 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Bắt đầu Loading
     setState(() {
       _isLoading = true;
       _errorMessage = "";
     });
 
-    // Gọi API từ thư mục API
     String result = await LoginAPI.login(email, password);
 
-    // Dừng Loading
+    if (!mounted) return;
     setState(() {
       _isLoading = false;
     });
 
     if (result == "SUCCESS") {
-      // Đăng nhập thành công, lấy quyền (Role) để điều hướng
       String? role = await Security.getRole();
 
-      // Kiểm tra widget còn tồn tại trước khi dùng BuildContext (chuẩn Flutter lints)
-      if (!context.mounted) return;
+      if (!mounted) return;
 
-      // Hiển thị thông báo đăng nhập thành công
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Đăng nhập thành công với quyền $role!"),
@@ -63,23 +62,18 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
 
-      // Điều hướng dựa trên Role
       if (role == "LANDLORD") {
-        // Dùng pushReplacement để xóa màn hình Login khỏi ngăn xếp (bấm Back không quay lại được)
         Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const LandladyScreen())
+          context,
+          MaterialPageRoute(builder: (context) => const LandladyScreen()),
         );
       } else if (role == "TENANT") {
-        // --- SỬA Ở ĐÂY: Điều hướng sang UserScreen ---
         Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const UserScreen())
+          context,
+          MaterialPageRoute(builder: (context) => const UserScreen()),
         );
       }
-
     } else {
-      // Đăng nhập thất bại (Sai pass, lỗi mạng...), hiển thị lỗi lên UI
       setState(() {
         _errorMessage = result;
       });
@@ -91,10 +85,10 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView( // Giúp cuộn màn hình khi bàn phím bật lên
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch, // Căng ngang các widget
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 40),
 
@@ -132,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 20),
 
-              // 3. Ô nhập Mật khẩu (Có nút ẩn/hiện)
+              // 3. Ô nhập Mật khẩu
               TextField(
                 controller: _passwordController,
                 obscureText: !_isPasswordVisible,
@@ -168,7 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              // 5. Hiển thị Lỗi (Nếu có)
+              // 5. Hiển thị Lỗi
               if (_errorMessage.isNotEmpty) ...[
                 Text(
                   _errorMessage,

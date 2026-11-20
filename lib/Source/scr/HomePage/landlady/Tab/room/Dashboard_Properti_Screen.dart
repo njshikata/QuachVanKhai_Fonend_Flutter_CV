@@ -21,6 +21,8 @@ class DashboardPropertiScreen extends StatefulWidget {
 
 class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
   late Future<List<LandlordPropertyDTO>> _futureProperties;
+  // Bản gần nhất (từ database phụ hoặc lần tải trước) -> hiện ngay trong lúc chờ server, không màn hình trắng
+  List<LandlordPropertyDTO>? _lastData;
 
   String _filterStatus = 'ALL';
   String _sortPrice = 'NONE';
@@ -29,11 +31,14 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
   void initState() {
     super.initState();
     _loadData();
+    PropertyAPI.cachedDashboard().then((cached) {
+      if (mounted && cached != null && _lastData == null) setState(() => _lastData = cached);
+    });
   }
 
   void _loadData() {
     setState(() {
-      _futureProperties = PropertyAPI.getDashboardData();
+      _futureProperties = PropertyAPI.getDashboardData().then((fresh) => _lastData = fresh);
     });
   }
 
@@ -503,11 +508,13 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
               child: FutureBuilder<List<LandlordPropertyDTO>>(
                 future: _futureProperties,
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.blueAccent));
+                  final waiting = snapshot.connectionState == ConnectionState.waiting;
+                  final source = waiting ? _lastData : snapshot.data;
+                  if (waiting && source == null) return const Center(child: CircularProgressIndicator(color: Colors.blueAccent));
                   if (snapshot.hasError) return Center(child: Text("Lỗi: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("Bạn chưa có khu trọ nào. Hãy thêm mới!"));
+                  if (source == null || source.isEmpty) return const Center(child: Text("Bạn chưa có khu trọ nào. Hãy thêm mới!"));
 
-                  List<LandlordPropertyDTO> displayProperties = _processData(snapshot.data!);
+                  List<LandlordPropertyDTO> displayProperties = _processData(source);
                   if (displayProperties.isEmpty) return const Center(child: Text("Không có phòng nào thỏa mãn điều kiện lọc."));
 
                   return ListView.builder(

@@ -1,7 +1,7 @@
 // Đường dẫn: lib/Source/scr/HomePage/landlady/Add_rental_roomScreen.dart
 
 import 'package:flutter/material.dart';
-import 'dart:convert';
+import 'package:qlpt_frontend/Source/api/JsonIsolate.dart';
 import 'package:http/http.dart' as http;
 import 'package:qlpt_frontend/Source/api/Property/LandlordManage/LandlordManageAPI.dart';
 import 'package:qlpt_frontend/Source/api/Property/LandlordManage/LandlordManageDTO.dart';
@@ -43,13 +43,26 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
     _fetchProvinces();
   }
 
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _streetController.dispose();
+    _descriptionController.dispose();
+    _rulesController.dispose();
+    _billingDayController.dispose();
+    _deadlineDayController.dispose();
+    super.dispose();
+  }
+
   // ==================== DÙNG API PHỔ BIẾN NHẤT (OPEN-API) ====================
   Future<void> _fetchProvinces() async {
     try {
       final response = await http.get(Uri.parse('https://provinces.open-api.vn/api/p/'));
       if (response.statusCode == 200) {
+        final decoded = await JsonIsolate.decode(response.bodyBytes);
+        if (!mounted) return;
         setState(() {
-          _provinces = jsonDecode(utf8.decode(response.bodyBytes));
+          _provinces = decoded;
         });
       }
     } catch (e) {
@@ -61,8 +74,10 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
     try {
       final response = await http.get(Uri.parse('https://provinces.open-api.vn/api/p/$provinceCode?depth=2'));
       if (response.statusCode == 200) {
+        final decoded = await JsonIsolate.decode(response.bodyBytes);
+        if (!mounted) return;
         setState(() {
-          _districts = jsonDecode(utf8.decode(response.bodyBytes))['districts'];
+          _districts = decoded['districts'];
         });
       }
     } catch (e) {
@@ -74,8 +89,10 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
     try {
       final response = await http.get(Uri.parse('https://provinces.open-api.vn/api/d/$districtCode?depth=2'));
       if (response.statusCode == 200) {
+        final decoded = await JsonIsolate.decode(response.bodyBytes);
+        if (!mounted) return;
         setState(() {
-          _wards = jsonDecode(utf8.decode(response.bodyBytes))['wards'];
+          _wards = decoded['wards'];
         });
       }
     } catch (e) {
@@ -87,10 +104,13 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() { _isLoading = true; });
+    setState(() {
+      _isLoading = true;
+    });
 
     try {
-      String fullAddress = "${_streetController.text.trim()}, $_selectedWardName, $_selectedDistrictName, $_selectedProvinceName";
+      String fullAddress =
+          "${_streetController.text.trim()},$_selectedWardName, $_selectedDistrictName,$_selectedProvinceName";
 
       var request = CreatePropertyRequest(
         name: _nameController.text.trim(),
@@ -140,7 +160,11 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() { _isLoading = false; });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -288,23 +312,47 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
               ),
 
               _buildTextField(
-                  controller: _streetController,
-                  label: "Số nhà, tên ngõ/đường",
-                  icon: Icons.edit_road
+                controller: _streetController,
+                label: "Số nhà, tên ngõ/đường",
+                icon: Icons.edit_road,
               ),
 
               const Divider(height: 30),
 
               Row(
                 children: [
-                  Expanded(child: _buildTextField(controller: _billingDayController, label: "Ngày chốt tiền (1-31)", icon: Icons.calendar_month, isNumber: true)),
+                  Expanded(
+                    child: _buildTextField(
+                      controller: _billingDayController,
+                      label: "Ngày chốt tiền (1-31)",
+                      icon: Icons.calendar_month,
+                      isNumber: true,
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildTextField(controller: _deadlineDayController, label: "Hạn đóng (1-31)", icon: Icons.warning_amber, isNumber: true)),
+                  Expanded(
+                    child: _buildTextField(
+                      controller: _deadlineDayController,
+                      label: "Hạn đóng (1-31)",
+                      icon: Icons.warning_amber,
+                      isNumber: true,
+                    ),
+                  ),
                 ],
               ),
 
-              _buildTextField(controller: _descriptionController, label: "Mô tả (Không bắt buộc)", icon: Icons.description, isRequired: false),
-              _buildTextField(controller: _rulesController, label: "Nội quy (Không bắt buộc)", icon: Icons.rule, isRequired: false),
+              _buildTextField(
+                controller: _descriptionController,
+                label: "Mô tả (Không bắt buộc)",
+                icon: Icons.description,
+                isRequired: false,
+              ),
+              _buildTextField(
+                controller: _rulesController,
+                label: "Nội quy (Không bắt buộc)",
+                icon: Icons.rule,
+                isRequired: false,
+              ),
 
               const SizedBox(height: 20),
 
@@ -319,7 +367,10 @@ class _AddRentalRoomScreenState extends State<AddRentalRoomScreen> {
                   onPressed: _isLoading ? null : _submitForm,
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("LƯU KHU TRỌ", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                      : const Text(
+                    "LƯU KHU TRỌ",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
                 ),
               )
             ],

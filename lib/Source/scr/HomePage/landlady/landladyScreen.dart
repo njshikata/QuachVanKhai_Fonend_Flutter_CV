@@ -1,9 +1,11 @@
 // Đường dẫn: lib/Source/scr/HomePage/landlady/LandladyScreen.dart
 
 import 'package:flutter/material.dart';
+import 'package:qlpt_frontend/Source/perf/PerfLabScreen.dart';
 import 'package:qlpt_frontend/Source/scr/HomePage/landlady/Narbar_Flotter/Flooler.dart';
 import 'package:qlpt_frontend/Source/scr/HomePage/landlady/Narbar_Flotter/Narbar.dart';
 import 'package:qlpt_frontend/Source/scr/HomePage/landlady/ServiceRoom/ServiceRoomScreen.dart';
+import 'package:qlpt_frontend/Source/scr/HomePage/landlady/SmartCard/SmartCardScreen.dart';
 import 'package:qlpt_frontend/Source/scr/HomePage/landlady/Tab/room/Dashboard_Properti_Screen.dart';
 import 'package:qlpt_frontend/Source/scr/HomePage/landlady/Tab/TabUser/Manage_User_Screen.dart';
 import 'package:qlpt_frontend/Source/security/Security.dart';
@@ -19,15 +21,31 @@ class LandladyScreen extends StatefulWidget {
 class _LandladyScreenState extends State<LandladyScreen> {
   int _selectedIndex = 0;
 
-  // ĐÃ CẬP NHẬT 4 TIÊU ĐỀ
-  final List<String> _titles = [
+  final List<String> _titles = const [
     "Danh sách Nhà Trọ",
-    "Quản Lý Dịch Vụ",     // Tab mới
-    "Quản Lý Người Dùng",  // Bị đẩy xuống số 3
+    "Quản Lý Dịch Vụ",
+    "Quản Lý Người Dùng",
+    "Thẻ Thông Minh",
     "Cài Đặt Hệ Thống"
   ];
 
+  // Khởi tạo 1 lần duy nhất trong initState để không bị tạo mới lại khi build()
+  late final List<Widget> _screens;
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      const DashboardPropertiScreen(),
+      const ServiceRoomScreen(),
+      const ManageUserScreen(),
+      const SmartCardScreen(embedded: true),
+      _buildSettingsTab(),
+    ];
+  }
+
   void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
     setState(() {
       _selectedIndex = index;
     });
@@ -40,6 +58,13 @@ class _LandladyScreenState extends State<LandladyScreen> {
         children: [
           const Icon(Icons.settings, size: 80, color: Colors.grey),
           const SizedBox(height: 30),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PerfLabScreen())),
+            icon: const Icon(Icons.speed),
+            label: const Text("Hiệu năng & Demo"),
+            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+          ),
+          const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: () async {
               await Security.logout();
@@ -63,17 +88,13 @@ class _LandladyScreenState extends State<LandladyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ĐÃ CẬP NHẬT 4 MÀN HÌNH TƯƠNG ỨNG
-    final List<Widget> screens = [
-      const DashboardPropertiScreen(),
-      const ServiceRoomScreen(),       // Màn hình Dịch vụ ở vị trí index = 1
-      const ManageUserScreen(),
-      _buildSettingsTab(),
-    ];
-
     return Scaffold(
       appBar: Navbar(title: _titles[_selectedIndex]),
-      body: screens[_selectedIndex],
+      // IndexedStack giúp giữ nguyên state và vị trí cuộn của các tab
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _screens,
+      ),
       bottomNavigationBar: Footer(
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,

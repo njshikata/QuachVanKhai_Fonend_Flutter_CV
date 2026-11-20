@@ -25,6 +25,17 @@ dependencies:
 
   # Thư viện hiển thị thông báo local khi app đang mở
   flutter_local_notifications: ^17.2.1
+  crypto: ^3.0.8
+  flutter_dotenv: ^6.0.2
+  encrypt: ^5.0.3
+  pointycastle: ^3.9.1
+  # Cache ảnh mạng (đĩa + RAM) & quản lý thời hạn file cache
+  cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
+  http_parser: ^4.0.2
+  # Database phụ (SQLite) lưu dữ liệu ít thay đổi + ETag để đồng bộ kiểu 304 Not Modified
+  sqflite: ^2.4.2
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:
