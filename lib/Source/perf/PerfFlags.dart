@@ -15,14 +15,25 @@ class PerfFlag {
   final String offText;  // Khi TẮT (chưa tối ưu)
   final ValueNotifier<bool> notifier;
 
-  PerfFlag(this.key, this.title, this.onText, this.offText, {bool defaultValue = true})
-      : notifier = ValueNotifier(defaultValue);
+  PerfFlag(this.key, this.title, this.onText, this.offText, {bool? defaultValue})
+      : defaultValue = defaultValue ?? PerfFlags.buildOptimized,
+        notifier = ValueNotifier(defaultValue ?? PerfFlags.buildOptimized);
+
+  final bool defaultValue;
 
   bool get value => notifier.value;
 }
 
 class PerfFlags {
-  static const String _prefix = 'perf_flag_';
+  /// HAI BẢN APK: build với --dart-define=PERF_MODE=chua_toi_uu -> mặc định TẮT mọi kỹ thuật tối ưu
+  /// (bản "chưa tối ưu"); không truyền / PERF_MODE=toi_uu -> mặc định BẬT hết (bản "đã tối ưu").
+  /// Trong app vẫn bật/tắt từng công tắc được ở màn "Đo hiệu năng".
+  static const String buildMode = String.fromEnvironment('PERF_MODE', defaultValue: 'toi_uu');
+  static const bool buildOptimized = buildMode != 'chua_toi_uu';
+  static String get buildLabel => buildOptimized ? 'BẢN ĐÃ TỐI ƯU' : 'BẢN CHƯA TỐI ƯU';
+
+  // Mỗi bản lưu công tắc riêng -> cài đè bản này lên bản kia không bị lẫn cấu hình
+  static const String _prefix = buildOptimized ? 'perf_flag_' : 'perf_flag_raw_';
 
   // ---------- Hiển thị ----------
   static final PerfFlag showOverlay = PerfFlag('overlay', 'Hiện bảng FPS / RAM',
@@ -41,9 +52,9 @@ class PerfFlags {
       'Ảnh tải 1 lần, lần sau đọc từ bộ nhớ máy',
       'Image.network: không lưu đĩa, mở lại app là tải lại');
 
-  static final PerfFlag imageResize = PerfFlag('image_resize', 'memCacheWidth / memCacheHeight',
-      'Giải mã ảnh đúng kích thước hiển thị (vd 56px)',
-      'Giải mã ảnh gốc độ phân giải đầy đủ vào RAM');
+  static final PerfFlag imageResize = PerfFlag('image_resize', 'Ảnh thu nhỏ + memCacheWidth',
+      'Xin server ảnh nhỏ (200px) và giải mã đúng kích thước hiển thị',
+      'Tải + giải mã ảnh gốc 1600px vào RAM');
 
   static final PerfFlag isolateJson = PerfFlag('isolate_json', 'compute() parse JSON ở Isolate',
       'JSON lớn được parse ở luồng nền, UI không giật',
@@ -53,12 +64,16 @@ class PerfFlags {
       'Đổi 1 dòng chỉ vẽ lại đúng dòng đó',
       'setState cả danh sách mỗi khi 1 dòng thay đổi');
 
+  static final PerfFlag batchApi = PerfFlag('batch_api', 'Gộp request (1 API cho N phòng)',
+      'Màn Dịch vụ: 1 request lấy trạng thái hóa đơn mọi phòng',
+      'Gọi lần lượt 1 request cho TỪNG phòng đang thuê (N+1 request)');
+
   static final PerfFlag etagLocalDb = PerfFlag('etag_db', 'ETag (304) + database phụ SQLite',
       'Dữ liệu không đổi -> server trả 304, hiện ngay dữ liệu trong máy',
       'Luôn tải lại & parse lại toàn bộ JSON');
 
   static final List<PerfFlag> optimizations = [
-    listBuilder, paging, imageDiskCache, imageResize, isolateJson, itemNotifier, etagLocalDb,
+    listBuilder, paging, imageDiskCache, imageResize, isolateJson, itemNotifier, batchApi, etagLocalDb,
   ];
 
   static final List<PerfFlag> all = [showOverlay, ...optimizations];
@@ -71,6 +86,14 @@ class PerfFlags {
     for (final f in all) {
       final v = prefs.getBool('$_prefix${f.key}');
       if (v != null) f.notifier.value = v;
+    }
+  }
+
+  /// Trả mọi công tắc về đúng cài đặt đã lưu (chưa lưu thì về mặc định), bỏ các thay đổi tạm thời.
+  static Future<void> restoreSaved() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final f in all) {
+      f.notifier.value = prefs.getBool('$_prefix${f.key}') ?? f.defaultValue;
     }
   }
 

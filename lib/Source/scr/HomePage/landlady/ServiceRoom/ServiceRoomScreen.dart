@@ -7,6 +7,9 @@ import 'package:qlpt_frontend/Source/api/Property/PropertyAPI.dart';
 import 'package:qlpt_frontend/Source/api/Property/PropertyDTO.dart';
 import 'package:qlpt_frontend/Source/api/ServiceRoom/ServiceRoomAPI.dart';
 import 'package:qlpt_frontend/Source/api/ServiceRoom/ServiceRoomDTO.dart';
+import 'package:qlpt_frontend/Source/perf/MeterGalleryScreen.dart';
+import 'package:qlpt_frontend/Source/perf/PerfFlags.dart';
+import 'package:qlpt_frontend/Source/perf/PerfMonitor.dart';
 
 class ServiceRoomScreen extends StatefulWidget {
   const ServiceRoomScreen({super.key});
@@ -30,6 +33,11 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
   // Mảng lưu trạng thái chốt số/thanh toán của từng phòng để tô màu Khu Trọ
   // Key: roomId, Value: RoomBillingSummary
   Map<int, RoomBillingSummary> _roomBillingMap = {};
+  final Set<int> _collapsed = {}; // id các khu trọ đang thu gọn
+  // false = trạng thái hóa đơn chưa về -> chưa tô đỏ (tránh cả màn đỏ rực rồi mới chuyển xanh)
+  bool _billingReady = false;
+  // Tiến độ tải từng phòng (chỉ dùng ở bản CHƯA tối ưu, N+1 request) để màn hình không "quay vòng câm"
+  final ValueNotifier<String?> _progress = ValueNotifier(null);
 
   @override
   void initState() {
@@ -41,6 +49,7 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _progress.dispose();
     super.dispose();
   }
 
@@ -51,26 +60,21 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
       _errorMessage = '';
     });
     try {
-      final properties = await PropertyAPI.getDashboardData();
-
-      Map<int, RoomBillingSummary> tempMap = {};
-      for (var p in properties) {
-        for (var r in p.rooms) {
-          if (r.status == 'RENTED') {
-            try {
-              var summary = await ServiceRoomAPI.getRoomBillingSummary(r.id!);
-              tempMap[r.id!] = summary;
-            } catch (e) {
-              // Bỏ qua lỗi lẻ tẻ của từng phòng
-            }
-          }
-        }
+      final List<LandlordPropertyDTO> properties;
+      final Map<int, RoomBillingSummary> tempMap;
+      if (PerfFlags.batchApi.value) {
+        await _fetchProgressive();
+        return;
+      } else {
+        properties = await PropertyAPI.getDashboardData();
+        tempMap = await _fetchBillingOneByOne(properties, {});
       }
 
       if (mounted) {
         setState(() {
           _allProperties = properties;
           _roomBillingMap = tempMap;
+          _billingReady = true;
           _isLoading = false;
           _applyFilter();
         });
@@ -86,19 +90,87 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
     }
   }
 
-  Future<void> _refreshBillingOnly() async {
-    Map<int, RoomBillingSummary> tempMap = Map.from(_roomBillingMap);
-    for (var p in _allProperties) {
-      for (var r in p.rooms) {
-        if (r.status == 'RENTED') {
-          try {
-            var summary = await ServiceRoomAPI.getRoomBillingSummary(r.id!);
-            tempMap[r.id!] = summary;
-          } catch (e) {
-            // ...
+  // TỐI ƯU (phía app):
+  //  1. Vẽ ngay bản đã lưu trong máy (SQLite) nếu có -> mở lại màn này gần như tức thì.
+  //  2. Gọi song song 2 API, nhưng KHÔNG đợi cả hai: danh sách phòng (nhẹ, ~0.3s) về là hiện luôn,
+  //     trạng thái hóa đơn (nặng ~850KB, server mất 1-2s) về sau thì chỉ tô lại màu.
+  Future<void> _fetchProgressive() async {
+    final propsF = PropertyAPI.getDashboardData();
+    final billF = ServiceRoomAPI.getAllBillingStatus();
+
+    if (_allProperties.isEmpty) {
+      final cached = await Future.wait([PropertyAPI.cachedDashboard(), ServiceRoomAPI.cachedBillingStatus()]);
+      final cProps = cached[0] as List<LandlordPropertyDTO>?;
+      if (mounted && cProps != null && _allProperties.isEmpty) {
+        final cBill = cached[1] as Map<int, RoomBillingSummary>?;
+        setState(() {
+          _allProperties = cProps;
+          if (cBill != null) {
+            _roomBillingMap = cBill;
+            _billingReady = true;
           }
-        }
+          _isLoading = false;
+          _applyFilter();
+        });
       }
+    }
+
+    // Lỗi của request hóa đơn được xử lý riêng, không làm hỏng danh sách phòng
+    final billSafe = billF.then<Map<int, RoomBillingSummary>?>((v) => v, onError: (_) => null);
+
+    final properties = await propsF; // lỗi -> catch ở hàm gọi
+    if (!mounted) return;
+    setState(() {
+      _allProperties = properties;
+      _isLoading = false;
+      _applyFilter();
+    });
+
+    final bill = await billSafe;
+    if (!mounted) return;
+    if (bill == null) {
+      if (!_billingReady) _showSnackBar("Không tải được trạng thái hóa đơn, kéo xuống để thử lại", Colors.orange);
+      return;
+    }
+    setState(() {
+      _roomBillingMap = bill;
+      _billingReady = true;
+      _applyFilter();
+    });
+  }
+
+  // CHƯA TỐI ƯU (để so sánh): mỗi phòng đang thuê 1 request, chạy lần lượt -> N+1 request
+  Future<Map<int, RoomBillingSummary>> _fetchBillingOneByOne(
+      List<LandlordPropertyDTO> properties, Map<int, RoomBillingSummary> base) async {
+    final tempMap = Map<int, RoomBillingSummary>.from(base);
+    final rented = [for (var p in properties) for (var r in p.rooms) if (r.status == 'RENTED') r];
+    var done = 0;
+    for (var r in rented) {
+      // Rời màn hình thì dừng ngay, không để hàng nghìn request chạy ngầm làm chậm các màn khác
+      if (!mounted) break;
+      try {
+        tempMap[r.id!] = await ServiceRoomAPI.getRoomBillingSummary(r.id!);
+      } catch (e) {
+        // Bỏ qua lỗi lẻ tẻ của từng phòng
+      }
+      done++;
+      if (done % 25 == 0 || done == rented.length) {
+        _progress.value = 'Bản CHƯA tối ưu: tải hóa đơn từng phòng, mỗi phòng 1 request\n'
+            '$done / ${rented.length} phòng';
+      }
+    }
+    _progress.value = null;
+    return tempMap;
+  }
+
+  Future<void> _refreshBillingOnly() async {
+    Map<int, RoomBillingSummary> tempMap;
+    try {
+      tempMap = PerfFlags.batchApi.value
+          ? await ServiceRoomAPI.getAllBillingStatus()
+          : await _fetchBillingOneByOne(_allProperties, _roomBillingMap);
+    } catch (e) {
+      return;
     }
 
     if (mounted) {
@@ -699,7 +771,7 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
                                           onTap: () async {
                                             Navigator.of(context).pop();
                                             try {
-                                              final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                                              final pickedFile = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1600, maxHeight: 1600, imageQuality: 80);
                                               if (pickedFile != null) {
                                                 setStateDialog(() => selectedImage = pickedFile);
                                               }
@@ -714,7 +786,7 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
                                           onTap: () async {
                                             Navigator.of(context).pop();
                                             try {
-                                              final pickedFile = await picker.pickImage(source: ImageSource.camera);
+                                              final pickedFile = await picker.pickImage(source: ImageSource.camera, maxWidth: 1600, maxHeight: 1600, imageQuality: 80);
                                               if (pickedFile != null) {
                                                 setStateDialog(() => selectedImage = pickedFile);
                                               }
@@ -932,9 +1004,137 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
 
   // ================= UI DANH SÁCH NHÓM THEO KHU TRỌ =================
   Widget _buildPropertyList() {
-    if (_isLoading) return const Center(child: CircularProgressIndicator(color: Colors.blueAccent));
+    if (_isLoading) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const CircularProgressIndicator(color: Colors.blueAccent),
+          ValueListenableBuilder<String?>(
+            valueListenable: _progress,
+            builder: (context, p, _) => p == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(p, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+                  ),
+          ),
+        ]),
+      );
+    }
     if (_errorMessage.isNotEmpty) return Center(child: Text("Lỗi: $_errorMessage", style: const TextStyle(color: Colors.red)));
     if (_displayProperties.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.home_work, size: 80, color: Colors.grey.shade300), const SizedBox(height: 16), const Text("Không tìm thấy khu trọ / phòng nào", style: TextStyle(color: Colors.grey))]));
+    if (!PerfFlags.listBuilder.value) return _buildPropertyListLegacy();
+
+    // TỐI ƯU: CustomScrollView + SliverList.builder cho từng khu trọ.
+    // Bản cũ đặt cả 50–80 phòng vào children của ExpansionTile -> khu nào lướt tới là build hết mọi phòng 1 lúc (giật).
+    // Giờ chỉ build các phòng đang nằm trong khung nhìn, phòng cuộn khỏi màn hình được giải phóng.
+    final slivers = <Widget>[];
+    for (final property in _displayProperties) {
+      final hasDebtOrUnbilled = _propertyHasDebt(property);
+      final expanded = !_collapsed.contains(property.id);
+      slivers.add(SliverToBoxAdapter(child: _propertyHeader(property, hasDebtOrUnbilled, expanded)));
+      if (expanded) {
+        slivers.add(SliverList.builder(
+          addRepaintBoundaries: false,
+          itemCount: property.rooms.length,
+          itemBuilder: (context, i) {
+            PerfCounters.itemBuilds++;
+            return _roomTile(property, property.rooms[i]);
+          },
+        ));
+      }
+      slivers.add(const SliverToBoxAdapter(child: SizedBox(height: 12)));
+    }
+
+    return RefreshIndicator(
+      onRefresh: _fetchPropertiesAndBillingInfo,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.only(top: 10, bottom: 90, left: 16, right: 16),
+            sliver: SliverMainAxisGroup(slivers: slivers),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _propertyHasDebt(LandlordPropertyDTO property) {
+    for (var r in property.rooms) {
+      if (r.status == 'RENTED') {
+        var summary = _roomBillingMap[r.id];
+        if (!_billingReady) return false;
+        if (summary == null || summary.totalAmount == 0 || !summary.isPaidThisMonth) return true;
+      }
+    }
+    return false;
+  }
+
+  Widget _propertyHeader(LandlordPropertyDTO property, bool hasDebtOrUnbilled, bool expanded) {
+    return Material(
+      color: hasDebtOrUnbilled ? Colors.red.shade50 : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: hasDebtOrUnbilled ? Colors.red.shade300 : Colors.blue.shade200, width: 1.5),
+      ),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        onTap: () => setState(() => expanded ? _collapsed.add(property.id) : _collapsed.remove(property.id)),
+        leading: CircleAvatar(
+          backgroundColor: hasDebtOrUnbilled ? Colors.red.shade100 : Colors.blue.shade50,
+          child: Icon(Icons.maps_home_work, color: hasDebtOrUnbilled ? Colors.red : Colors.blueAccent),
+        ),
+        title: Text(property.name,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: hasDebtOrUnbilled ? Colors.red.shade700 : Colors.black87)),
+        subtitle: Text('${property.address} · ${property.rooms.length} phòng',
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+        trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+      ),
+    );
+  }
+
+  Widget _roomTile(LandlordPropertyDTO property, LandlordRoomDTO room) {
+    bool isRented = room.status == 'RENTED';
+    double roomPrice = double.tryParse(room.basePrice.toString()) ?? 0.0;
+    var roomSum = _roomBillingMap[room.id];
+    bool roomHasDebtOrUnbilled = _billingReady && isRented && (roomSum == null || roomSum.totalAmount == 0 || !roomSum.isPaidThisMonth);
+
+    // Viền + nền bằng DecoratedBox, không dùng BoxShadow mờ (blur tốn GPU khi cuộn hàng trăm dòng)
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300, width: 1),
+      ),
+      child: ListTile(
+        onTap: () => _showServiceBottomSheet(room.id!, room.roomNumber, property.name, roomPrice),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        leading: CircleAvatar(
+          backgroundColor: isRented ? (roomHasDebtOrUnbilled ? Colors.red.shade50 : Colors.green.shade50) : Colors.grey.shade100,
+          child: Icon(Icons.meeting_room, color: isRented ? (roomHasDebtOrUnbilled ? Colors.red : Colors.green) : Colors.grey),
+        ),
+        title: Text("Phòng ${room.roomNumber}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        subtitle: Text(
+            isRented
+                ? (roomSum == null ? (_billingReady ? "Chưa chốt số" : "Đang tải trạng thái...") : (roomSum.totalAmount == 0 ? "Chưa chốt số" : (roomSum.isPaidThisMonth ? "Đã thanh toán" : "Đang nợ tiền")))
+                : "Phòng trống",
+            style: TextStyle(color: isRented ? (!_billingReady ? Colors.grey : (roomHasDebtOrUnbilled ? Colors.red : Colors.green)) : Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
+        trailing: OutlinedButton(
+          style: OutlinedButton.styleFrom(
+              foregroundColor: isRented ? Colors.blueAccent : Colors.grey,
+              side: BorderSide(color: isRented ? Colors.blueAccent : Colors.grey.shade300),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+          onPressed: () => _showServiceBottomSheet(room.id!, room.roomNumber, property.name, roomPrice),
+          child: const Text("Cài đặt", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+        ),
+      ),
+    );
+  }
+
+  // ===== CHƯA TỐI ƯU (giữ để so sánh khi tắt "ListView.builder" trong Hiệu năng & Demo) =====
+  Widget _buildPropertyListLegacy() {
 
     return RefreshIndicator(
       onRefresh: _fetchPropertiesAndBillingInfo,
@@ -982,6 +1182,7 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
 
               // ================= HIỂN THỊ DANH SÁCH TỪNG PHÒNG =================
               children: property.rooms.map((room) {
+                PerfCounters.itemBuilds++; // Đếm để so sánh với bản tối ưu
                 bool isRented = room.status == 'RENTED';
                 double roomPrice = double.tryParse(room.basePrice.toString()) ?? 0.0;
 
@@ -1039,6 +1240,12 @@ class _ServiceRoomScreenState extends State<ServiceRoomScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'meter_gallery',
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MeterGalleryScreen())),
+        icon: const Icon(Icons.photo_library),
+        label: const Text('Ảnh công tơ'),
+      ),
       body: Column(
         children: [
           Container(

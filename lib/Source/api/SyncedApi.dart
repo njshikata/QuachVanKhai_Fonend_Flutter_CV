@@ -73,6 +73,11 @@ class SyncedApi {
 
   static final Map<String, _MemEntry> _mem = {};
   static final Map<String, Future<dynamic>> _inflight = {};
+  // TỐC ĐỘ khi mở lại app: màn hình gọi peek() (vẽ ngay bản cũ) VÀ getJson() (hỏi server) cùng lúc.
+  // Trước đây mỗi bên tự đọc SQLite + giải mã JSON riêng -> cùng 1 bản 642KB / 4.000 phòng bị đọc và giải mã 2 lần.
+  // Nay dùng chung 1 Future: đọc 1 lần, giải mã 1 lần.
+  static final Map<String, Future<LocalRow?>> _diskRows = {};
+  static final Map<String, Future<dynamic>> _diskDecoded = {};
   static String? _ownerToken;
   static String _owner = 'anonymous';
 
@@ -82,7 +87,13 @@ class SyncedApi {
     final owner = _ownerOf(headers['Authorization']);
     final memKey = '$owner|$path';
     if (!PerfFlags.etagLocalDb.value) return _plainGet(path, headers); // Chế độ "không tối ưu"
-    return _inflight[memKey] ??= _fetch(path, owner, memKey, headers).whenComplete(() => _inflight.remove(memKey));
+    // LƯU Ý: callback của whenComplete KHÔNG được trả về Future. Viết `() => _inflight.remove(memKey)` sẽ trả về
+    // chính Future này -> whenComplete đợi chính nó -> treo vĩnh viễn (màn hình quay vòng mãi).
+    return _inflight[memKey] ??= _fetch(path, owner, memKey, headers).whenComplete(() {
+      _inflight.remove(memKey);
+      _diskRows.remove(memKey); // đã có trong _mem -> bỏ bản đọc tạm từ SQLite
+      _diskDecoded.remove(memKey);
+    });
   }
 
   /// Dữ liệu đang có trong máy (RAM hoặc SQLite), KHÔNG gọi mạng -> vẽ màn hình ngay khi mở.
@@ -93,14 +104,22 @@ class SyncedApi {
     final owner = _ownerOf(headers['Authorization']);
     final mem = _mem['$owner|$path'];
     if (mem != null) return mem.data;
-    final row = await LocalDb.get(path, owner);
-    return row == null ? null : JsonIsolate.decodeString(row.body);
+    return _diskData(path, owner, '$owner|$path');
   }
+
+  static Future<LocalRow?> _diskRow(String path, String owner, String memKey) =>
+      _diskRows[memKey] ??= LocalDb.get(path, owner);
+
+  static Future<dynamic> _diskData(String path, String owner, String memKey) =>
+      _diskDecoded[memKey] ??= _diskRow(path, owner, memKey)
+          .then((row) => row == null ? null : JsonIsolate.decodeString(row.body));
 
   /// Xóa toàn bộ dữ liệu cục bộ (đăng xuất).
   static Future<void> clear() async {
     _mem.clear();
     _inflight.clear();
+    _diskRows.clear();
+    _diskDecoded.clear();
     _ownerToken = null;
     _owner = 'anonymous';
     await LocalDb.clear();
@@ -123,7 +142,7 @@ class SyncedApi {
     LocalRow? disk;
     var etag = mem?.etag;
     if (mem == null) {
-      disk = await LocalDb.get(path, owner);
+      disk = await _diskRow(path, owner, memKey);
       etag = disk?.etag;
     }
     final reqHeaders = {...headers}..remove('Content-Type');
@@ -136,11 +155,10 @@ class SyncedApi {
     } catch (e) {
       // Offline / server không phản hồi -> dùng bản trong máy nếu có
       if (mem != null) return mem.data;
-      disk ??= await LocalDb.get(path, owner);
       if (disk != null) {
         stats.offlineHits++;
         debugPrint('[SyncedApi] Offline, dùng dữ liệu lưu lúc ${disk.savedAt}: $path');
-        return JsonIsolate.decodeString(disk.body);
+        return _diskData(path, owner, memKey);
       }
       rethrow;
     }
@@ -151,7 +169,7 @@ class SyncedApi {
     if (res.statusCode == 304) {
       if (mem != null) return mem.data;
       if (disk != null) {
-        final data = await JsonIsolate.decodeString(disk.body);
+        final data = await _diskData(path, owner, memKey); // dùng lại bản peek() đã giải mã
         _mem[memKey] = _MemEntry(etag, data);
         unawaited(LocalDb.touch(path, owner));
         return data;
@@ -162,7 +180,7 @@ class SyncedApi {
       final data = await JsonIsolate.decode(res.bodyBytes);
       final newEtag = res.headers['etag'];
       _mem[memKey] = _MemEntry(newEtag, data);
-      unawaited(_persist(path, owner, newEtag, data, res.bodyBytes.length));
+      unawaited(_persist(path, owner, newEtag, data, res.bodyBytes));
       return data;
     }
 
@@ -174,7 +192,7 @@ class SyncedApi {
       if (full.statusCode == 200) {
         final data = await JsonIsolate.decode(full.bodyBytes);
         _mem[memKey] = _MemEntry(full.headers['etag'], data);
-        unawaited(_persist(path, owner, full.headers['etag'], data, full.bodyBytes.length));
+        unawaited(_persist(path, owner, full.headers['etag'], data, full.bodyBytes));
         return data;
       }
       throw ApiStatusException(full.statusCode, utf8.decode(full.bodyBytes));
@@ -183,12 +201,16 @@ class SyncedApi {
     throw ApiStatusException(res.statusCode, utf8.decode(res.bodyBytes));
   }
 
-  static Future<void> _persist(String path, String owner, String? etag, dynamic data, int size) async {
+  // TỐI ƯU: response lớn -> gửi MẢNG BYTE GỐC sang Isolate (copy 1 khối bộ nhớ, rất nhanh), Isolate tự
+  // giải mã + lọc trường nhạy cảm + mã hóa lại. KHÔNG gửi `data` (cây Map/List đã giải mã): Dart phải duyệt và
+  // copy từng phần tử của cây đó ngay trên UI thread -> với 4.000 phòng làm 1 khung hình treo ~0,5 giây.
+  static Future<void> _persist(String path, String owner, String? etag, dynamic data, Uint8List bytes) async {
+    final size = bytes.length;
     if (!LocalDb.supported) return;
     try {
       final result = size < JsonIsolate.isolateThresholdBytes
           ? _sanitizeAndEncode(data)
-          : await compute(_sanitizeAndEncode, data, debugLabel: 'sanitize $path');
+          : await compute(_sanitizeBytes, bytes, debugLabel: 'sanitize $path');
       final stripped = result['stripped'] as bool;
       await LocalDb.put(path, owner, etag: stripped ? null : etag, body: result['body'] as String);
     } catch (e) {
@@ -213,6 +235,9 @@ class SyncedApi {
 }
 
 // Top-level để chạy được trong compute()
+/// Chạy trong Isolate: giải mã JSON từ byte rồi lọc + mã hóa lại.
+Map<String, Object> _sanitizeBytes(Uint8List bytes) => _sanitizeAndEncode(jsonDecode(utf8.decode(bytes)));
+
 Map<String, Object> _sanitizeAndEncode(dynamic data) {
   var stripped = false;
   dynamic walk(dynamic v) {

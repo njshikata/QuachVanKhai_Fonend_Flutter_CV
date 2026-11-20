@@ -29,6 +29,37 @@ class ServiceRoomAPI {
     }
   }
 
+  /// Trạng thái hóa đơn của MỌI phòng đang thuê trong 1 request (Map roomId -> summary rút gọn).
+  static Future<Map<int, RoomBillingSummary>> getAllBillingStatus() async {
+    try {
+      final List<dynamic> list = await SyncedApi.getJson('$_path/billing-status');
+      final map = <int, RoomBillingSummary>{};
+      for (final j in list) {
+        final s = RoomBillingSummary.fromJson(Map<String, dynamic>.from(j as Map));
+        map[s.roomId] = s;
+      }
+      return map;
+    } catch (e) {
+      throw Exception(e.toString().replaceAll("Exception: ", ""));
+    }
+  }
+
+  /// Bản trạng thái hóa đơn lưu trong máy (SQLite/RAM) để vẽ màn hình ngay, null nếu chưa có.
+  static Future<Map<int, RoomBillingSummary>?> cachedBillingStatus() async {
+    try {
+      final list = await SyncedApi.peek('$_path/billing-status');
+      if (list == null) return null;
+      final map = <int, RoomBillingSummary>{};
+      for (final j in list as List) {
+        final s = RoomBillingSummary.fromJson(Map<String, dynamic>.from(j as Map));
+        map[s.roomId] = s;
+      }
+      return map;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<RoomBillingSummary> getRoomBillingSummary(int roomId) async {
     try {
       return RoomBillingSummary.fromJson(await SyncedApi.getJson('$_path/room/$roomId'));

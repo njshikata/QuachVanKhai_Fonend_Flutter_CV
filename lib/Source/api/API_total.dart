@@ -7,7 +7,9 @@ import 'package:pointycastle/asymmetric/api.dart';
 import 'package:qlpt_frontend/Source/security/Security.dart';
 
 class ApiTotal {
-  static const String physicalDeviceIP = "";
+  // IP máy chạy backend khi dùng ĐIỆN THOẠI THẬT. Truyền lúc chạy, khỏi sửa code:
+  //   flutter run --dart-define=API_HOST=192.168.1.5   (hoặc 127.0.0.1 kèm "adb reverse tcp:8080 tcp:8080")
+  static const String physicalDeviceIP = String.fromEnvironment('API_HOST');
 
   // Khóa Public Key chuẩn X.509 (OpenSSL generated - Khớp 100% với Private Key bên dưới)
   static const String _rawPublicKey =

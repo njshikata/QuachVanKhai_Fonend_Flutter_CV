@@ -31,6 +31,7 @@ dependencies:
   pointycastle: ^3.9.1
   # Cache ảnh mạng (đĩa + RAM) & quản lý thời hạn file cache
   cached_network_image: ^3.4.1
+  cached_network_image_platform_interface: ^4.1.1 # ImageRenderMethodForWeb (ảnh có header trên web)
   flutter_cache_manager: ^3.4.1
   http_parser: ^4.0.2
   # Database phụ (SQLite) lưu dữ liệu ít thay đổi + ETag để đồng bộ kiểu 304 Not Modified
@@ -39,6 +40,10 @@ dependencies:
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_driver:
     sdk: flutter
   flutter_lints: ^6.0.0
 

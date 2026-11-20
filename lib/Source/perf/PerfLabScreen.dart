@@ -22,6 +22,9 @@ import 'package:qlpt_frontend/Source/cache/AppCacheManager.dart';
 import 'package:qlpt_frontend/Source/security/Security.dart';
 
 import 'DemoFeedScreen.dart';
+import 'MeterGalleryScreen.dart';
+import 'real/RealCompareScreen.dart';
+import 'suite/TestSuiteScreen.dart';
 import 'PerfFlags.dart';
 import 'PerfMonitor.dart';
 import 'PerfOverlay.dart';
@@ -200,7 +203,7 @@ class _PerfLabScreenState extends State<PerfLabScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Hiệu năng & Demo')),
+      appBar: AppBar(title: Text('Hiệu năng & Demo · ${PerfFlags.buildLabel}', style: const TextStyle(fontSize: 16))),
       body: AnimatedBuilder(
         animation: PerfFlags.changes,
         builder: (context, _) => ListView(
@@ -364,8 +367,18 @@ class _PerfLabScreenState extends State<PerfLabScreen> {
                 style: TextStyle(color: Colors.deepOrange, fontSize: 12)),
           ),
         const SizedBox(height: 8),
+        _benchButton(Icons.insights, 'SO SÁNH TRÊN APP THẬT (dữ liệu thật) + biểu đồ',
+            'Đo tự động hoặc thủ công trên các màn Nhà trọ / Dịch vụ / Người dùng / Thẻ, cả 2 chế độ, vẽ biểu đồ so sánh',
+            () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RealCompareScreen()))),
+        _benchButton(Icons.science, 'Bộ test từng kỹ thuật T1–T8 (bài đo riêng lẻ)',
+            'Đo tách riêng từng kỹ thuật trong điều kiện kiểm soát; T3 kiểm tra luật lưu ảnh 3 tháng / đổi chủ',
+            () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TestSuiteScreen()))),
         _benchButton(Icons.view_list, 'Mở danh sách demo có ảnh',
             'Bấm "Tự cuộn & đo 15s" trong màn hình để ra số liệu FPS/RAM', _isLandlord ? _openFeed : null),
+        _benchButton(Icons.photo_library, 'Ảnh công tơ (1.000 ảnh) + Tự so sánh',
+            'Lưới ảnh – thấy rõ nhất tác dụng tối ưu ảnh. Nút "Tự so sánh" tự đo 2 chế độ', _isLandlord
+                ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MeterGalleryScreen()))
+                : null),
         _benchButton(Icons.data_object, 'Đo parse JSON: UI thread vs compute()',
             'Đo thời gian và số ms giao diện bị đứng', _isLandlord && _busy == null ? _benchJson : null),
         _benchButton(Icons.sync, 'Đo tải lại dữ liệu: có / không ETag',

@@ -1,6 +1,9 @@
+import 'dart:math' as math;
 // Đường dẫn: lib/Source/scr/HomePage/landlady/Dashboard_Properti_Screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:qlpt_frontend/Source/perf/PerfFlags.dart';
+import 'package:qlpt_frontend/Source/perf/PerfMonitor.dart';
 import 'package:intl/intl.dart';
 import 'package:qlpt_frontend/Source/api/Property/LandlordManage/LandlordManageAPI.dart';
 import 'package:qlpt_frontend/Source/api/Property/LandlordManage/LandlordManageDTO.dart';
@@ -26,6 +29,7 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
 
   String _filterStatus = 'ALL';
   String _sortPrice = 'NONE';
+  final Set<int> _collapsed = {}; // id các khu trọ đang thu gọn
 
   @override
   void initState() {
@@ -47,6 +51,20 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
     String result = amount.toStringAsFixed(0);
     result = result.replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.');
     return '$result đ';
+  }
+
+  List<LandlordPropertyDTO>? _cacheSource;
+  String _cacheKey = '';
+  List<LandlordPropertyDTO> _cacheResult = const [];
+
+  List<LandlordPropertyDTO> _processDataCached(List<LandlordPropertyDTO> source) {
+    final key = '$_filterStatus|$_sortPrice';
+    if (!identical(source, _cacheSource) || key != _cacheKey) {
+      _cacheSource = source;
+      _cacheKey = key;
+      _cacheResult = _processData(source);
+    }
+    return _cacheResult;
   }
 
   // Lọc và sắp xếp dữ liệu
@@ -514,10 +532,24 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
                   if (snapshot.hasError) return Center(child: Text("Lỗi: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
                   if (source == null || source.isEmpty) return const Center(child: Text("Bạn chưa có khu trọ nào. Hãy thêm mới!"));
 
-                  List<LandlordPropertyDTO> displayProperties = _processData(source);
+                  List<LandlordPropertyDTO> displayProperties = _processDataCached(source);
                   if (displayProperties.isEmpty) return const Center(child: Text("Không có phòng nào thỏa mãn điều kiện lọc."));
 
-                  return ListView.builder(
+                  if (!PerfFlags.listBuilder.value) return _buildLegacyList(displayProperties);
+                  return _buildSliverList(displayProperties);
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===== CHƯA TỐI ƯU (giữ để so sánh khi tắt "ListView.builder" trong Hiệu năng & Demo) =====
+  // GridView(shrinkWrap) trong mỗi item ListView: khu nào lướt tới là build + layout TẤT CẢ phòng của khu đó 1 lúc.
+  Widget _buildLegacyList(List<LandlordPropertyDTO> displayProperties) {
+    return ListView.builder(
                     padding: const EdgeInsets.all(12),
                     itemCount: displayProperties.length + 1,
                     itemBuilder: (context, index) {
@@ -569,6 +601,7 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
                                         ),
                                         itemCount: property.rooms.length,
                                         itemBuilder: (context, roomIndex) {
+                                          PerfCounters.itemBuilds++; // Đếm để so sánh với bản tối ưu
                                           final room = property.rooms[roomIndex];
                                           final isAvailable = room.status == 'AVAILABLE';
 
@@ -603,12 +636,140 @@ class _DashboardPropertiScreenState extends State<DashboardPropertiScreen> {
                       );
                     },
                   );
-                },
-              ),
+  }
+
+  // ===== TỐI ƯU: "làm phẳng" mọi khu trọ thành MỘT ListView.builder duy nhất =====
+  // Danh sách dòng: [header khu 1, dòng 3 phòng, dòng 3 phòng, ..., header khu 2, ...].
+  // ListView.builder chỉ build các dòng đang hiện trên màn hình, kể cả header.
+  //
+  // Vì sao không dùng CustomScrollView với mỗi khu 1 SliverGrid (cách làm trước đó)?
+  //  - 50 khu = 100 sliver: viewport phải layout lại cả 100 sliver trong MỖI khung hình khi cuộn.
+  //  - Header của cả 50 khu (SliverToBoxAdapter) bị build ngay lúc mở màn, dù chưa nhìn thấy.
+  //  Đo trên dữ liệu thật (4.000 phòng), cách đó giật 34% khung hình, còn bản cũ chỉ 3%.
+  //  Bộ "So sánh trên app thật" đã phát hiện vấn đề này.
+  static const int _cols = 3;
+  // Mỗi item = 4 dòng (12 phòng). Đo trên app thật: 1 dòng/item làm ListView phải tạo item mới gần như MỖI khung hình
+  // khi cuộn + quá nhiều lớp vẽ nhỏ -> giật 29-39%. Gộp 4 dòng: ít item, ít lớp vẽ, vẫn chỉ build phần đang thấy.
+  static const int _rowsPerItem = 4;
+
+  Widget _buildSliverList(List<LandlordPropertyDTO> displayProperties) {
+    // Mỗi phần tử: (khu trọ, -1 = header | -2 = "chưa có phòng" | k = dòng bắt đầu từ phòng thứ k)
+    final rows = <(LandlordPropertyDTO, int)>[];
+    for (final property in displayProperties) {
+      rows.add((property, -1));
+      if (_collapsed.contains(property.id)) continue;
+      if (property.rooms.isEmpty) {
+        rows.add((property, -2));
+      } else {
+        for (var k = 0; k < property.rooms.length; k += _cols * _rowsPerItem) {
+          rows.add((property, k));
+        }
+      }
+    }
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
+      itemCount: rows.length,
+      itemBuilder: (context, index) {
+        final (property, k) = rows[index];
+        if (k == -1) {
+          return Padding(
+            padding: EdgeInsets.only(top: index == 0 ? 0 : 16, bottom: 8),
+            child: _propertyHeader(property, !_collapsed.contains(property.id)),
+          );
+        }
+        if (k == -2) {
+          return const Padding(
+              padding: EdgeInsets.all(16.0), child: Center(child: Text("Chưa có phòng nào", style: TextStyle(color: Colors.grey))));
+        }
+        // Tối đa 4 dòng × 3 ô phòng (giữ đúng kích thước ô như GridView cũ: tỉ lệ 1.5, cách nhau 10)
+        final end = math.min(k + _cols * _rowsPerItem, property.rooms.length);
+        return Column(children: [
+          for (var r = k; r < end; r += _cols)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Row(children: [
+                for (var c = 0; c < _cols; c++) ...[
+                  if (c > 0) const SizedBox(width: 10),
+                  Expanded(
+                    child: AspectRatio(
+                      aspectRatio: 1.5,
+                      child: r + c < end ? _countedCell(property.rooms[r + c]) : const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ]),
+            ),
+        ]);
+      },
+    );
+  }
+
+  Widget _countedCell(LandlordRoomDTO room) {
+    PerfCounters.itemBuilds++;
+    return _roomCell(room);
+  }
+
+  Widget _propertyHeader(LandlordPropertyDTO property, bool expanded) {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        children: [
+          ListTile(
+            onTap: () => setState(() => expanded ? _collapsed.add(property.id) : _collapsed.remove(property.id)),
+            leading: const CircleAvatar(backgroundColor: Colors.blueAccent, child: Icon(Icons.home_work, color: Colors.white)),
+            title: Text(property.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            subtitle: Text(property.address, maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Tổng: ${property.rooms.length} phòng", style: const TextStyle(fontWeight: FontWeight.bold)),
+                TextButton.icon(
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => AddRoomScreen(propertyId: property.id, propertyName: property.name)),
+                    );
+                    if (result == true) _loadData();
+                  },
+                  icon: const Icon(Icons.add, color: Colors.blueAccent, size: 20),
+                  label: const Text("Thêm phòng", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _roomCell(LandlordRoomDTO room) {
+    final isAvailable = room.status == 'AVAILABLE';
+    return InkWell(
+      onTap: () => _showRoomDetailBottomSheet(context, room),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isAvailable ? Colors.green.shade50 : Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isAvailable ? Colors.green.shade300 : Colors.orange.shade300, width: 1.5),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(room.roomNumber, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isAvailable ? Colors.green.shade800 : Colors.orange.shade800)),
+            const SizedBox(height: 4),
+            Icon(isAvailable ? Icons.check_circle_outline : Icons.person, size: 16, color: isAvailable ? Colors.green.shade700 : Colors.orange.shade700),
+          ],
+        ),
+      ),
+    );
+  }
+
 }

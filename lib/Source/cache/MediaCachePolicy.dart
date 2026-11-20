@@ -36,6 +36,19 @@ class MediaCachePolicy {
   static Future<void>? _cleanup;
   static final Set<String> _trackedThisSession = {};
 
+  /// Đồng hồ của chính sách. Bộ test tối ưu (TestSuiteScreen) tạm "tua nhanh" đồng hồ này để kiểm tra
+  /// luật 90 ngày / 30 ngày đổi chủ mà không phải chờ thật. Ứng dụng thật luôn dùng DateTime.now.
+  static DateTime Function() clock = DateTime.now;
+
+  /// Chạy dọn dẹp ngay (bỏ qua giới hạn 1 lần/phiên) – chỉ dùng cho bộ test.
+  static Future<void> runCleanupNow() => _runCleanup();
+
+  /// Ảnh [key] còn được ghi nhận trong chỉ mục cache của máy không – chỉ dùng cho bộ test.
+  static Future<bool> isTracked(String key) async {
+    await _load();
+    return _index!.containsKey(key);
+  }
+
   /// Chạy dọn dẹp 1 lần mỗi phiên (gọi tự động từ AppNetworkImage).
   static Future<void> ensureCleaned() => _cleanup ??= _runCleanup();
 
@@ -46,7 +59,7 @@ class MediaCachePolicy {
     final index = _index!;
     if (!index.containsKey(key)) {
       index[key] = {
-        't': DateTime.now().millisecondsSinceEpoch,
+        't': clock().millisecondsSinceEpoch,
         if (tag?.group != null) 'g': tag!.group,
         if (tag?.ownerId != null) 'o': tag!.ownerId,
         if (tag?.roomId != null) 'r': tag!.roomId,
@@ -81,7 +94,7 @@ class MediaCachePolicy {
       owners[rk] = {'cur': currentOwnerId, 'old': previousOwnerId, 'at': ownerChangedAt.millisecondsSinceEpoch};
     } else if (saved != null && saved['cur'] != currentOwnerId) {
       // Server không báo nhưng máy phát hiện chủ phòng khác lần trước
-      owners[rk] = {'cur': currentOwnerId, 'old': saved['cur'], 'at': DateTime.now().millisecondsSinceEpoch};
+      owners[rk] = {'cur': currentOwnerId, 'old': saved['cur'], 'at': clock().millisecondsSinceEpoch};
     } else if (saved == null) {
       owners[rk] = {'cur': currentOwnerId};
     }
@@ -104,7 +117,7 @@ class MediaCachePolicy {
   static Future<void> _runCleanup() async {
     try {
       await _load();
-      final now = DateTime.now().millisecondsSinceEpoch;
+      final now = clock().millisecondsSinceEpoch;
       final expired = _index!.entries
           .where((e) => now - ((e.value as Map)['t'] as int) > maxAge.inMilliseconds)
           .map((e) => e.key)
@@ -126,7 +139,7 @@ class MediaCachePolicy {
     final info = _owners![rk] as Map<String, dynamic>?;
     if (info == null || info['old'] == null || info['at'] == null) return;
     final changedAt = DateTime.fromMillisecondsSinceEpoch(info['at'] as int);
-    if (DateTime.now().difference(changedAt) < ownerChangeGrace) return;
+    if (clock().difference(changedAt) < ownerChangeGrace) return;
 
     final roomId = int.parse(rk);
     final oldOwner = info['old'];

@@ -18,6 +18,13 @@
         android:label="qlpt_frontend"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Dùng cho bài đo "tắt hẳn app rồi bật lại": process riêng để kill + mở lại app chính -->
+        <activity
+            android:name=".RestartActivity"
+            android:process=":restart"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

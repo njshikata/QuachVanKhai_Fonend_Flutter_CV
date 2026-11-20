@@ -140,6 +140,8 @@ class PerfMonitor {
   final List<PerfSample> history = [];
   final List<PerfReport> reports = [];
   final ValueNotifier<bool> recording = ValueNotifier(false);
+  /// Được gọi mỗi khi 1 phiên ghi kết thúc (dùng để lưu vào màn "So sánh trên app thật").
+  final List<void Function(PerfReport report)> reportListeners = [];
 
   List<PerfSample>? _rec;
   String _recLabel = '';
@@ -193,6 +195,9 @@ class PerfMonitor {
     if (rec == null || rec.isEmpty) return null;
     final report = PerfReport(_recLabel, PerfFlags.modeLabel, rec);
     reports.insert(0, report);
+    for (final l in List.of(reportListeners)) {
+      l(report);
+    }
     return report;
   }
 

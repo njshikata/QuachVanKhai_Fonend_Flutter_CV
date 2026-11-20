@@ -9,6 +9,7 @@
 //  - Server trả 204 (ảnh hết hạn lưu trữ) -> hiện placeholder.
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart' show ImageRenderMethodForWeb;
 import 'package:flutter/material.dart';
 import 'package:qlpt_frontend/Source/api/API_total.dart';
 import 'package:qlpt_frontend/Source/perf/PerfFlags.dart';
@@ -30,6 +31,8 @@ class AppNetworkImage extends StatefulWidget {
   final Widget Function(BuildContext context)? placeholder;
   final Widget Function(BuildContext context, Object error)? errorBuilder;
   final IconData fallbackIcon;
+  /// Gọi 1 lần khi ảnh hiện xong (true) hoặc lỗi (false) – dùng để đo thời gian tải ảnh.
+  final void Function(bool ok)? onSettled;
 
   const AppNetworkImage({
     super.key,
@@ -46,6 +49,7 @@ class AppNetworkImage extends StatefulWidget {
     this.placeholder,
     this.errorBuilder,
     this.fallbackIcon = Icons.person,
+    this.onSettled,
   });
 
   /// Chuẩn hóa URL: đường dẫn tương đối hoặc "http://localhost:8080" -> baseUrl hiện tại (emulator/thiết bị thật).
@@ -56,13 +60,14 @@ class AppNetworkImage extends StatefulWidget {
     return '${ApiTotal.baseUrl}${u.startsWith('/') ? '' : '/'}$u';
   }
 
-  // Header dùng chung ~30s (handshake server chấp nhận lệch 60s) -> tránh đọc SharedPreferences cho từng ảnh
+  // Header dùng chung ~10s (handshake server chỉ chấp nhận lệch 60s; ảnh có thể nằm trong hàng đợi tải
+  // vài chục giây khi cuộn nhanh -> header cũ quá sẽ bị 403) -> tránh đọc SharedPreferences cho từng ảnh
   static Future<Map<String, String>>? _sharedHeaders;
   static DateTime _sharedHeadersAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   static Future<Map<String, String>> _authHeaders() {
     final now = DateTime.now();
-    if (_sharedHeaders == null || now.difference(_sharedHeadersAt) > const Duration(seconds: 30)) {
+    if (_sharedHeaders == null || now.difference(_sharedHeadersAt) > const Duration(seconds: 10)) {
       _sharedHeadersAt = now;
       _sharedHeaders = ApiTotal.getAuthHeaders().then((h) {
         final m = Map<String, String>.from(h as Map);
@@ -79,6 +84,14 @@ class AppNetworkImage extends StatefulWidget {
 
 class _AppNetworkImageState extends State<AppNetworkImage> {
   Future<Map<String, String>>? _headers;
+  bool _settled = false;
+
+  void _settle(bool ok) {
+    if (_settled || widget.onSettled == null) return;
+    _settled = true;
+    // Gọi sau frame hiện tại (đang trong build)
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.onSettled?.call(ok));
+  }
 
   @override
   void initState() {
@@ -147,9 +160,15 @@ class _AppNetworkImageState extends State<AppNetworkImage> {
         fit: widget.fit,
         cacheWidth: memW,
         cacheHeight: memH,
+        frameBuilder: (context, child, frame, sync) {
+          if (frame != null || sync) _settle(true);
+          return child;
+        },
         loadingBuilder: (context, child, progress) => progress == null ? child : _loading(context),
-        errorBuilder: (context, error, _) =>
-            widget.errorBuilder != null ? widget.errorBuilder!(context, error) : _fallback(context),
+        errorBuilder: (context, error, _) {
+          _settle(false);
+          return widget.errorBuilder != null ? widget.errorBuilder!(context, error) : _fallback(context);
+        },
       );
     }
 
@@ -158,6 +177,8 @@ class _AppNetworkImageState extends State<AppNetworkImage> {
       cacheKey: key,
       cacheManager: AppCacheManager.instance,
       httpHeaders: headers,
+      // Web: mặc định dùng thẻ <img> -> KHÔNG gửi header (JWT/handshake) -> 403. HttpGet thì gửi được.
+      imageRenderMethodForWeb: headers.isEmpty ? ImageRenderMethodForWeb.HtmlImage : ImageRenderMethodForWeb.HttpGet,
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
@@ -166,11 +187,14 @@ class _AppNetworkImageState extends State<AppNetworkImage> {
       fadeInDuration: const Duration(milliseconds: 150),
       imageBuilder: (context, provider) {
         MediaCachePolicy.track(key, widget.tag);
+        _settle(true);
         return Image(image: provider, width: widget.width, height: widget.height, fit: widget.fit, gaplessPlayback: true);
       },
       placeholder: (context, _) => _loading(context),
-      errorWidget: (context, _, error) =>
-          widget.errorBuilder != null ? widget.errorBuilder!(context, error) : _fallback(context),
+      errorWidget: (context, _, error) {
+        _settle(false);
+        return widget.errorBuilder != null ? widget.errorBuilder!(context, error) : _fallback(context);
+      },
     );
   }
 

@@ -6,8 +6,17 @@ import 'PropertyDTO.dart';
 class PropertyAPI {
   static const String _dashboardPath = '/api/landlord/properties/dashboard';
 
-  static List<LandlordPropertyDTO> _parse(dynamic data) =>
-      (data as List).map((json) => LandlordPropertyDTO.fromJson(json)).toList();
+  // Cùng 1 JSON (bản trong máy được dùng lại khi server trả 304) -> không dựng lại 4.000 đối tượng phòng lần 2.
+  static Object? _lastJson;
+  static List<LandlordPropertyDTO>? _lastParsed;
+
+  static List<LandlordPropertyDTO> _parse(dynamic data) {
+    if (_lastParsed != null && identical(data, _lastJson)) return _lastParsed!;
+    final parsed = (data as List).map((json) => LandlordPropertyDTO.fromJson(json)).toList();
+    _lastJson = data;
+    _lastParsed = parsed;
+    return parsed;
+  }
 
   // Hàm gọi API lấy dữ liệu Dashboard Chủ Trọ (ETag: dữ liệu không đổi -> server trả 304, không tải lại)
   static Future<List<LandlordPropertyDTO>> getDashboardData() async {

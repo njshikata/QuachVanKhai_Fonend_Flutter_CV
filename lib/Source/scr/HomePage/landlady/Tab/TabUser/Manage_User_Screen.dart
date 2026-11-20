@@ -8,6 +8,8 @@ import 'package:qlpt_frontend/Source/api/Register/Register_API.dart';
 import 'package:qlpt_frontend/Source/api/Register/Register_DTO.dart';
 import 'package:qlpt_frontend/Source/api/ServiceRoom/ServiceRoomAPI.dart';
 import 'package:qlpt_frontend/Source/api/ServiceRoom/ServiceRoomDTO.dart';
+import 'package:qlpt_frontend/Source/perf/PerfFlags.dart';
+import 'package:qlpt_frontend/Source/perf/PerfMonitor.dart';
 import 'package:qlpt_frontend/Source/security/Security.dart';
 // TODO: Kiểm tra lại đường dẫn import file LoginScreen bên dưới xem đúng với project của bạn chưa
 import 'package:qlpt_frontend/Source/scr/Login/LoginScreen.dart';
@@ -552,12 +554,9 @@ class _ManageUserScreenState extends State<ManageUserScreen> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _fetchUsers,
-      child: ListView.builder(
-        padding: const EdgeInsets.only(top: 10, bottom: 90, left: 16, right: 16),
-        itemCount: _displayUsers.length,
-        itemBuilder: (context, index) {
+    // 1 dòng khách thuê (dùng chung cho 2 chế độ bên dưới)
+    Widget tileAt(BuildContext context, int index) {
+          PerfCounters.itemBuilds++; // Đếm số dòng phải build (so sánh Column vs ListView.builder)
           final user = _displayUsers[index];
 
           bool hasRooms = user.rentedRooms != null && user.rentedRooms!.isNotEmpty;
@@ -643,8 +642,24 @@ class _ManageUserScreenState extends State<ManageUserScreen> {
               ),
             ),
           );
-        },
-      ),
+        }
+
+    const pad = EdgeInsets.only(top: 10, bottom: 90, left: 16, right: 16);
+    if (!PerfFlags.listBuilder.value) {
+      // CHƯA TỐI ƯU (để so sánh): Column build TẤT CẢ khách thuê cùng lúc
+      return RefreshIndicator(
+        onRefresh: _fetchUsers,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: pad,
+          child: Column(children: [for (var i = 0; i < _displayUsers.length; i++) tileAt(context, i)]),
+        ),
+      );
+    }
+    // TỐI ƯU: ListView.builder chỉ build các dòng đang hiện trên màn hình
+    return RefreshIndicator(
+      onRefresh: _fetchUsers,
+      child: ListView.builder(padding: pad, itemCount: _displayUsers.length, itemBuilder: tileAt),
     );
   }
 

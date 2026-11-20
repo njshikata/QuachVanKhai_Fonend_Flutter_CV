@@ -1,6 +1,6 @@
 // lib/Source/api/User/Pay/PayAPI.dart
 
-import 'dart:convert';
+import 'package:qlpt_frontend/Source/api/JsonIsolate.dart';
 import 'package:http/http.dart' as http;
 import 'package:qlpt_frontend/Source/api/API_total.dart';
 import 'PayDTO.dart';
@@ -18,7 +18,8 @@ class PayAPI {
 
       if (response.statusCode == 200) {
         // Decode utf8 để không bị lỗi font chữ tiếng Việt
-        var jsonResponse = json.decode(utf8.decode(response.bodyBytes));
+        // Parse JSON qua JsonIsolate (compute() khi response lớn) thay vì json.decode trên UI thread
+        var jsonResponse = await JsonIsolate.decode(response.bodyBytes);
         return VietQRResponse.fromJson(jsonResponse);
       } else {
         throw Exception('Lấy mã thanh toán thất bại: ${response.body}');

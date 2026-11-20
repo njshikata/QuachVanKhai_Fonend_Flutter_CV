@@ -123,11 +123,14 @@ class _DemoTile extends StatelessWidget {
           children: [
             const SizedBox(width: 8),
             AppNetworkImage(
-              url: item.imageUrl,
+              // TỐI ƯU ẢNH: xin server bản thu nhỏ 200px (~4KB) thay vì ảnh gốc 1600px (~60KB) cho ô 64px.
+              // Tắt "memCacheWidth" trong Hiệu năng & Demo -> tải ảnh gốc để so sánh.
+              url: PerfFlags.imageResize.value ? '${item.imageUrl}?w=200' : item.imageUrl,
               width: 64,
               height: 64,
               borderRadius: BorderRadius.circular(8),
               fallbackIcon: Icons.image,
+              authenticated: false, // Ảnh demo public -> không cần JWT/handshake
             ),
             const SizedBox(width: 10),
             Expanded(
